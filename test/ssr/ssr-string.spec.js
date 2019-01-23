@@ -1312,7 +1312,7 @@ describe('SSR: renderToString', () => {
     })
   })
 
-  it('should support ssrPrefetch option', done => {
+  it('should support serverPrefetch option', done => {
     renderVmWithOptions({
       template: `
         <div>{{ count }}</div>
@@ -1320,7 +1320,7 @@ describe('SSR: renderToString', () => {
       data: {
         count: 0
       },
-      ssrPrefetch () {
+      serverPrefetch () {
         return new Promise((resolve) => {
           setTimeout(() => {
             this.count = 42
@@ -1334,7 +1334,7 @@ describe('SSR: renderToString', () => {
     })
   })
 
-  it('should support ssrPrefetch option (nested)', done => {
+  it('should support serverPrefetch option (nested)', done => {
     renderVmWithOptions({
       template: `
         <div>
@@ -1345,7 +1345,7 @@ describe('SSR: renderToString', () => {
       data: {
         count: 0
       },
-      ssrPrefetch () {
+      serverPrefetch () {
         return new Promise((resolve) => {
           setTimeout(() => {
             this.count = 42
@@ -1363,7 +1363,7 @@ describe('SSR: renderToString', () => {
               message: ''
             }
           },
-          ssrPrefetch () {
+          serverPrefetch () {
             return new Promise((resolve) => {
               setTimeout(() => {
                 this.message = 'vue.js'
@@ -1379,7 +1379,7 @@ describe('SSR: renderToString', () => {
     })
   })
 
-  it('should support ssrPrefetch option (nested async)', done => {
+  it('should support serverPrefetch option (nested async)', done => {
     renderVmWithOptions({
       template: `
         <div>
@@ -1390,7 +1390,7 @@ describe('SSR: renderToString', () => {
       data: {
         count: 0
       },
-      ssrPrefetch () {
+      serverPrefetch () {
         return new Promise((resolve) => {
           setTimeout(() => {
             this.count = 42
@@ -1409,7 +1409,7 @@ describe('SSR: renderToString', () => {
                 message: ''
               }
             },
-            ssrPrefetch () {
+            serverPrefetch () {
               return new Promise((resolve) => {
                 setTimeout(() => {
                   this.message = 'vue.js'
@@ -1426,12 +1426,12 @@ describe('SSR: renderToString', () => {
     })
   })
 
-  it('should merge ssrPrefetch option', done => {
+  it('should merge serverPrefetch option', done => {
     const mixin = {
       data: {
         message: ''
       },
-      ssrPrefetch () {
+      serverPrefetch () {
         return new Promise((resolve) => {
           setTimeout(() => {
             this.message = 'vue.js'
@@ -1451,7 +1451,7 @@ describe('SSR: renderToString', () => {
       data: {
         count: 0
       },
-      ssrPrefetch () {
+      serverPrefetch () {
         return new Promise((resolve) => {
           setTimeout(() => {
             this.count = 42
@@ -1465,7 +1465,7 @@ describe('SSR: renderToString', () => {
     })
   })
 
-  it(`should skip ssrPrefetch option that doesn't return a promise`, done => {
+  it(`should skip serverPrefetch option that doesn't return a promise`, done => {
     renderVmWithOptions({
       template: `
         <div>{{ count }}</div>
@@ -1473,7 +1473,7 @@ describe('SSR: renderToString', () => {
       data: {
         count: 0
       },
-      ssrPrefetch () {
+      serverPrefetch () {
         setTimeout(() => {
           this.count = 42
         }, 1)
@@ -1529,13 +1529,14 @@ describe('SSR: renderToString', () => {
       data: {
         style: {
           opacity: 0, // valid, opacity is unit-less
-          top: 0, // invalid, top requires unit
+          top: 0, // valid, top requires unit but 0 is allowed
+          left: 10, // invalid, left requires a unit
           marginTop: '10px' // valid
         }
       }
     }, result => {
       expect(result).toContain(
-        '<div data-server-rendered="true" style="opacity:0;margin-top:10px;"></div>'
+        '<div data-server-rendered="true" style="opacity:0;top:0;margin-top:10px;"></div>'
       )
       done()
     })

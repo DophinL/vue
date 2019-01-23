@@ -2037,6 +2037,20 @@ function getAndRemoveAttr (
   return val
 }
 
+function getAndRemoveAttrByRegex (
+  el,
+  name
+) {
+  var list = el.attrsList;
+  for (var i = 0, l = list.length; i < l; i++) {
+    var attr = list[i];
+    if (name.test(attr.name)) {
+      list.splice(i, 1);
+      return attr
+    }
+  }
+}
+
 function rangeSetItem (
   item,
   range
@@ -2316,6 +2330,8 @@ var bindRE = /^:|^\.|^v-bind:/;
 var propBindRE = /^\./;
 var modifierRE = /\.[^.]+/g;
 
+var scopedSlotShorthandRE = /^:?\(.*\)$/;
+
 var lineBreakRE = /[\r\n]/;
 var whitespaceRE = /\s+/g;
 
@@ -2441,7 +2457,7 @@ function parse (
         { start: el.start }
       );
     }
-    if (hasOwn(el.attrsMap, 'v-for')) {
+    if (el.attrsMap.hasOwnProperty('v-for')) {
       warnOnce(
         'Cannot use v-for on stateful component root element because ' +
         'it renders multiple elements.',
@@ -2678,7 +2694,8 @@ function processElement (
   );
 
   processRef(element);
-  processSlot(element);
+  processSlotContent(element);
+  processSlotOutlet(element);
   processComponent(element);
   for (var i = 0; i < transforms.length; i++) {
     element = transforms[i](element, options) || element;
@@ -2825,7 +2842,112 @@ function processOnce (el) {
   }
 }
 
-function processSlot (el) {
+// handle content being passed to a component as slot,
+// e.g. <template slot="xxx">, <div slot-scope="xxx">
+function processSlotContent (el) {
+  var slotScope;
+  if (el.tag === 'template') {
+    slotScope = getAndRemoveAttr(el, 'scope');
+    /* istanbul ignore if */
+    if (process.env.NODE_ENV !== 'production' && slotScope) {
+      warn$1(
+        "the \"scope\" attribute for scoped slots have been deprecated and " +
+        "replaced by \"slot-scope\" since 2.5. The new \"slot-scope\" attribute " +
+        "can also be used on plain elements in addition to <template> to " +
+        "denote scoped slots.",
+        el.rawAttrsMap['scope'],
+        true
+      );
+    }
+    el.slotScope = (
+      slotScope ||
+      getAndRemoveAttr(el, 'slot-scope')
+    );
+    if (process.env.NEW_SLOT_SYNTAX) {
+      // new in 2.6: slot-props and its shorthand works the same as slot-scope
+      // when used on <template> containers
+      el.slotScope = el.slotScope || getAndRemoveAttr(el, 'slot-props');
+      // 2.6 shorthand syntax
+      var shorthand = getAndRemoveAttrByRegex(el, scopedSlotShorthandRE);
+      if (shorthand) {
+        if (process.env.NODE_ENV !== 'production' && el.slotScope) {
+          warn$1(
+            "Unexpected mixed usage of different slot syntaxes.",
+            el
+          );
+        }
+        el.slotTarget = getScopedSlotShorthandName(shorthand);
+        el.slotScope = shorthand.value;
+      }
+    }
+  } else if ((slotScope = getAndRemoveAttr(el, 'slot-scope'))) {
+    /* istanbul ignore if */
+    if (process.env.NODE_ENV !== 'production' && el.attrsMap['v-for']) {
+      warn$1(
+        "Ambiguous combined usage of slot-scope and v-for on <" + (el.tag) + "> " +
+        "(v-for takes higher priority). Use a wrapper <template> for the " +
+        "scoped slot to make it clearer.",
+        el.rawAttrsMap['slot-scope'],
+        true
+      );
+    }
+    el.slotScope = slotScope;
+  } else if (process.env.NEW_SLOT_SYNTAX) {
+    // 2.6: slot-props on component, denotes default slot
+    slotScope = getAndRemoveAttr(el, 'slot-props');
+    var shorthand$1 = getAndRemoveAttrByRegex(el, scopedSlotShorthandRE);
+    if (slotScope || shorthand$1) {
+      if (process.env.NODE_ENV !== 'production') {
+        if (!maybeComponent(el)) {
+          warn$1(
+            "slot-props cannot be used on non-component elements.",
+            el.rawAttrsMap['slot-props'] || el.rawAttrsMap['()']
+          );
+        }
+        if (slotScope && shorthand$1) {
+          warn$1(
+            "Unexpected mixed usage of different slot syntaxes.",
+            el
+          );
+        }
+      }
+      // add the component's children to its default slot
+      var slots = el.scopedSlots || (el.scopedSlots = {});
+      var target = shorthand$1 ? getScopedSlotShorthandName(shorthand$1) : "\"default\"";
+      var slotContainer = slots[target] = createASTElement('template', [], el);
+      slotContainer.children = el.children;
+      slotContainer.slotScope = shorthand$1 ? shorthand$1.value : slotScope;
+      // remove children as they are returned from scopedSlots now
+      el.children = [];
+      // mark el non-plain so data gets generated
+      el.plain = false;
+    }
+  }
+
+  // slot="xxx"
+  var slotTarget = getBindingAttr(el, 'slot');
+  if (slotTarget) {
+    el.slotTarget = slotTarget === '""' ? '"default"' : slotTarget;
+    // preserve slot as an attribute for native shadow DOM compat
+    // only for non-scoped slots.
+    if (el.tag !== 'template' && !el.slotScope) {
+      addAttr(el, 'slot', slotTarget, getRawBindingAttr(el, 'slot'));
+    }
+  }
+}
+
+function getScopedSlotShorthandName (ref) {
+  var name = ref.name;
+
+  return name.charAt(0) === ':'
+    // dynamic :(name)
+    ? name.slice(2, -1) || "\"default\""
+    // static (name)
+    : ("\"" + (name.slice(1, -1) || "default") + "\"")
+}
+
+// handle <slot/> outlets
+function processSlotOutlet (el) {
   if (el.tag === 'slot') {
     el.slotName = getBindingAttr(el, 'name');
     if (process.env.NODE_ENV !== 'production' && el.key) {
@@ -2836,114 +2958,7 @@ function processSlot (el) {
         getRawBindingAttr(el, 'key')
       );
     }
-  } else {
-    var slotScope;
-    if (el.tag === 'template') {
-      slotScope = getAndRemoveAttr(el, 'scope');
-      /* istanbul ignore if */
-      if (process.env.NODE_ENV !== 'production' && slotScope) {
-        warn$1(
-          "the \"scope\" attribute for scoped slots have been deprecated and " +
-          "replaced by \"slot-scope\" since 2.5. The new \"slot-scope\" attribute " +
-          "can also be used on plain elements in addition to <template> to " +
-          "denote scoped slots.",
-          el.rawAttrsMap['scope'],
-          true
-        );
-      }
-      el.slotScope = slotScope || getAndRemoveAttr(el, 'slot-scope');
-    } else if ((slotScope = getAndRemoveAttr(el, 'slot-scope'))) {
-      /* istanbul ignore if */
-      if (process.env.NODE_ENV !== 'production' && el.attrsMap['v-for']) {
-        warn$1(
-          "Ambiguous combined usage of slot-scope and v-for on <" + (el.tag) + "> " +
-          "(v-for takes higher priority). Use a wrapper <template> for the " +
-          "scoped slot to make it clearer.",
-          el.rawAttrsMap['slot-scope'],
-          true
-        );
-      }
-      el.slotScope = slotScope;
-      if (process.env.NODE_ENV !== 'production' && nodeHas$Slot(el)) {
-        warn$1('Unepxected mixed usage of `slot-scope` and `$slot`.', el);
-      }
-    } else {
-      // 2.6 $slot support
-      // Context: https://github.com/vuejs/vue/issues/9180
-      // Ideally, all slots should be compiled as functions (this is what we
-      // are doing in 3.x), but for 2.x e want to preserve complete backwards
-      // compatibility, and maintain the exact same compilation output for any
-      // code that does not use the new syntax.
-
-      // recursively check component children for presence of `$slot` in all
-      // expressions until running into a nested child component.
-      if (maybeComponent(el) && childrenHas$Slot(el)) {
-        processScopedSlots(el);
-      }
-    }
-    var slotTarget = getBindingAttr(el, 'slot');
-    if (slotTarget) {
-      el.slotTarget = slotTarget === '""' ? '"default"' : slotTarget;
-      // preserve slot as an attribute for native shadow DOM compat
-      // only for non-scoped slots.
-      if (el.tag !== 'template' && !el.slotScope && !nodeHas$Slot(el)) {
-        addAttr(el, 'slot', slotTarget, getRawBindingAttr(el, 'slot'));
-      }
-    }
   }
-}
-
-function childrenHas$Slot (el) {
-  return el.children ? el.children.some(nodeHas$Slot) : false
-}
-
-var $slotRE = /(^|[^\w_$])\$slot($|[^\w_$])/;
-function nodeHas$Slot (node) {
-  // caching
-  if (hasOwn(node, 'has$Slot')) {
-    return (node.has$Slot)
-  }
-  if (node.type === 1) { // element
-    for (var key in node.attrsMap) {
-      if (dirRE.test(key) && $slotRE.test(node.attrsMap[key])) {
-        return (node.has$Slot = true)
-      }
-    }
-    return (node.has$Slot = childrenHas$Slot(node))
-  } else if (node.type === 2) { // expression
-    // TODO more robust logic for checking $slot usage
-    return (node.has$Slot = $slotRE.test(node.expression))
-  }
-  return false
-}
-
-function processScopedSlots (el) {
-  // 1. group children by slot target
-  var groups = {};
-  for (var i = 0; i < el.children.length; i++) {
-    var child = el.children[i];
-    var target = child.slotTarget || '"default"';
-    if (!groups[target]) {
-      groups[target] = [];
-    }
-    groups[target].push(child);
-  }
-  // 2. for each slot group, check if the group contains $slot
-  var loop = function ( name ) {
-    var group = groups[name];
-    if (group.some(nodeHas$Slot)) {
-      // 3. if a group contains $slot, all nodes in that group gets assigned
-      // as a scoped slot to el and removed from children
-      el.plain = false;
-      var slots = el.scopedSlots || (el.scopedSlots = {});
-      var slotContainer = slots[name] = createASTElement('template', [], el);
-      slotContainer.children = group;
-      slotContainer.slotScope = '$slot';
-      el.children = el.children.filter(function (c) { return group.indexOf(c) === -1; });
-    }
-  };
-
-  for (var name in groups) loop( name );
 }
 
 function processComponent (el) {
@@ -3469,7 +3484,7 @@ function optimize (root, options) {
 
 function genStaticKeys$1 (keys) {
   return makeMap(
-    'type,tag,attrsList,attrsMap,plain,parent,children,attrs,start,end,rawAttrsMap,has$Slot' +
+    'type,tag,attrsList,attrsMap,plain,parent,children,attrs,start,end,rawAttrsMap' +
     (keys ? ',' + keys : '')
   )
 }
@@ -3482,7 +3497,6 @@ function markStatic (node) {
     // 2. static slot content fails for hot-reloading
     if (
       !isPlatformReservedTag(node.tag) &&
-      !node.component &&
       node.tag !== 'slot' &&
       node.attrsMap['inline-template'] == null
     ) {
@@ -5139,4 +5153,3 @@ exports.compileToFunctions = compileToFunctions;
 exports.ssrCompile = compile$1;
 exports.ssrCompileToFunctions = compileToFunctions$1;
 exports.generateCodeFrame = generateCodeFrame;
-//# sourceMappingURL=build.js.map

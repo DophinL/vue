@@ -1,5 +1,5 @@
 /*!
- * Vue.js v2.5.22
+ * Vue.js v2.6.0-beta.1
  * (c) 2014-2019 Evan You
  * Released under the MIT License.
  */
@@ -2007,7 +2007,7 @@
         perf.measure(name, startTag, endTag);
         perf.clearMarks(startTag);
         perf.clearMarks(endTag);
-        perf.clearMeasures(name);
+        // perf.clearMeasures(name)
       };
     }
   }
@@ -3872,7 +3872,9 @@
   function normalizeScopedSlot(fn) {
     return function (scope) {
       var res = fn(scope);
-      return Array.isArray(res) ? res : res ? [res] : res
+      return res && typeof res === 'object' && !Array.isArray(res)
+        ? [res] // single vnode
+        : normalizeChildren(res)
     }
   }
 
@@ -5256,7 +5258,7 @@
     value: FunctionalRenderContext
   });
 
-  Vue.version = '2.5.22';
+  Vue.version = '2.6.0-beta.1';
 
   /*  */
 
@@ -9304,7 +9306,6 @@
   var platformIsPreTag;
   var platformMustUseProp;
   var platformGetTagNamespace;
-  var maybeComponent;
 
   function createASTElement (
     tag,
@@ -9335,7 +9336,6 @@
     platformMustUseProp = options.mustUseProp || no;
     platformGetTagNamespace = options.getTagNamespace || no;
     var isReservedTag = options.isReservedTag || no;
-    maybeComponent = function (el) { return !!el.component || !isReservedTag(el.tag); };
 
     transforms = pluckModuleFunction(options.modules, 'transformNode');
     preTransforms = pluckModuleFunction(options.modules, 'preTransformNode');
@@ -9415,7 +9415,7 @@
           { start: el.start }
         );
       }
-      if (hasOwn(el.attrsMap, 'v-for')) {
+      if (el.attrsMap.hasOwnProperty('v-for')) {
         warnOnce(
           'Cannot use v-for on stateful component root element because ' +
           'it renders multiple elements.',
@@ -9652,7 +9652,8 @@
     );
 
     processRef(element);
-    processSlot(element);
+    processSlotContent(element);
+    processSlotOutlet(element);
     processComponent(element);
     for (var i = 0; i < transforms.length; i++) {
       element = transforms[i](element, options) || element;
@@ -9799,7 +9800,55 @@
     }
   }
 
-  function processSlot (el) {
+  // handle content being passed to a component as slot,
+  // e.g. <template slot="xxx">, <div slot-scope="xxx">
+  function processSlotContent (el) {
+    var slotScope;
+    if (el.tag === 'template') {
+      slotScope = getAndRemoveAttr(el, 'scope');
+      /* istanbul ignore if */
+      if (slotScope) {
+        warn$2(
+          "the \"scope\" attribute for scoped slots have been deprecated and " +
+          "replaced by \"slot-scope\" since 2.5. The new \"slot-scope\" attribute " +
+          "can also be used on plain elements in addition to <template> to " +
+          "denote scoped slots.",
+          el.rawAttrsMap['scope'],
+          true
+        );
+      }
+      el.slotScope = (
+        slotScope ||
+        getAndRemoveAttr(el, 'slot-scope')
+      );
+    } else if ((slotScope = getAndRemoveAttr(el, 'slot-scope'))) {
+      /* istanbul ignore if */
+      if (el.attrsMap['v-for']) {
+        warn$2(
+          "Ambiguous combined usage of slot-scope and v-for on <" + (el.tag) + "> " +
+          "(v-for takes higher priority). Use a wrapper <template> for the " +
+          "scoped slot to make it clearer.",
+          el.rawAttrsMap['slot-scope'],
+          true
+        );
+      }
+      el.slotScope = slotScope;
+    }
+
+    // slot="xxx"
+    var slotTarget = getBindingAttr(el, 'slot');
+    if (slotTarget) {
+      el.slotTarget = slotTarget === '""' ? '"default"' : slotTarget;
+      // preserve slot as an attribute for native shadow DOM compat
+      // only for non-scoped slots.
+      if (el.tag !== 'template' && !el.slotScope) {
+        addAttr(el, 'slot', slotTarget, getRawBindingAttr(el, 'slot'));
+      }
+    }
+  }
+
+  // handle <slot/> outlets
+  function processSlotOutlet (el) {
     if (el.tag === 'slot') {
       el.slotName = getBindingAttr(el, 'name');
       if (el.key) {
@@ -9810,114 +9859,7 @@
           getRawBindingAttr(el, 'key')
         );
       }
-    } else {
-      var slotScope;
-      if (el.tag === 'template') {
-        slotScope = getAndRemoveAttr(el, 'scope');
-        /* istanbul ignore if */
-        if (slotScope) {
-          warn$2(
-            "the \"scope\" attribute for scoped slots have been deprecated and " +
-            "replaced by \"slot-scope\" since 2.5. The new \"slot-scope\" attribute " +
-            "can also be used on plain elements in addition to <template> to " +
-            "denote scoped slots.",
-            el.rawAttrsMap['scope'],
-            true
-          );
-        }
-        el.slotScope = slotScope || getAndRemoveAttr(el, 'slot-scope');
-      } else if ((slotScope = getAndRemoveAttr(el, 'slot-scope'))) {
-        /* istanbul ignore if */
-        if (el.attrsMap['v-for']) {
-          warn$2(
-            "Ambiguous combined usage of slot-scope and v-for on <" + (el.tag) + "> " +
-            "(v-for takes higher priority). Use a wrapper <template> for the " +
-            "scoped slot to make it clearer.",
-            el.rawAttrsMap['slot-scope'],
-            true
-          );
-        }
-        el.slotScope = slotScope;
-        if (nodeHas$Slot(el)) {
-          warn$2('Unepxected mixed usage of `slot-scope` and `$slot`.', el);
-        }
-      } else {
-        // 2.6 $slot support
-        // Context: https://github.com/vuejs/vue/issues/9180
-        // Ideally, all slots should be compiled as functions (this is what we
-        // are doing in 3.x), but for 2.x e want to preserve complete backwards
-        // compatibility, and maintain the exact same compilation output for any
-        // code that does not use the new syntax.
-
-        // recursively check component children for presence of `$slot` in all
-        // expressions until running into a nested child component.
-        if (maybeComponent(el) && childrenHas$Slot(el)) {
-          processScopedSlots(el);
-        }
-      }
-      var slotTarget = getBindingAttr(el, 'slot');
-      if (slotTarget) {
-        el.slotTarget = slotTarget === '""' ? '"default"' : slotTarget;
-        // preserve slot as an attribute for native shadow DOM compat
-        // only for non-scoped slots.
-        if (el.tag !== 'template' && !el.slotScope && !nodeHas$Slot(el)) {
-          addAttr(el, 'slot', slotTarget, getRawBindingAttr(el, 'slot'));
-        }
-      }
     }
-  }
-
-  function childrenHas$Slot (el) {
-    return el.children ? el.children.some(nodeHas$Slot) : false
-  }
-
-  var $slotRE = /(^|[^\w_$])\$slot($|[^\w_$])/;
-  function nodeHas$Slot (node) {
-    // caching
-    if (hasOwn(node, 'has$Slot')) {
-      return (node.has$Slot)
-    }
-    if (node.type === 1) { // element
-      for (var key in node.attrsMap) {
-        if (dirRE.test(key) && $slotRE.test(node.attrsMap[key])) {
-          return (node.has$Slot = true)
-        }
-      }
-      return (node.has$Slot = childrenHas$Slot(node))
-    } else if (node.type === 2) { // expression
-      // TODO more robust logic for checking $slot usage
-      return (node.has$Slot = $slotRE.test(node.expression))
-    }
-    return false
-  }
-
-  function processScopedSlots (el) {
-    // 1. group children by slot target
-    var groups = {};
-    for (var i = 0; i < el.children.length; i++) {
-      var child = el.children[i];
-      var target = child.slotTarget || '"default"';
-      if (!groups[target]) {
-        groups[target] = [];
-      }
-      groups[target].push(child);
-    }
-    // 2. for each slot group, check if the group contains $slot
-    var loop = function ( name ) {
-      var group = groups[name];
-      if (group.some(nodeHas$Slot)) {
-        // 3. if a group contains $slot, all nodes in that group gets assigned
-        // as a scoped slot to el and removed from children
-        el.plain = false;
-        var slots = el.scopedSlots || (el.scopedSlots = {});
-        var slotContainer = slots[name] = createASTElement('template', [], el);
-        slotContainer.children = group;
-        slotContainer.slotScope = '$slot';
-        el.children = el.children.filter(function (c) { return group.indexOf(c) === -1; });
-      }
-    };
-
-    for (var name in groups) loop( name );
   }
 
   function processComponent (el) {
@@ -10267,7 +10209,7 @@
 
   function genStaticKeys$1 (keys) {
     return makeMap(
-      'type,tag,attrsList,attrsMap,plain,parent,children,attrs,start,end,rawAttrsMap,has$Slot' +
+      'type,tag,attrsList,attrsMap,plain,parent,children,attrs,start,end,rawAttrsMap' +
       (keys ? ',' + keys : '')
     )
   }
@@ -10280,7 +10222,6 @@
       // 2. static slot content fails for hot-reloading
       if (
         !isPlatformReservedTag(node.tag) &&
-        !node.component &&
         node.tag !== 'slot' &&
         node.attrsMap['inline-template'] == null
       ) {
@@ -11495,4 +11436,3 @@
   return Vue;
 
 }));
-//# sourceMappingURL=vue.js.map

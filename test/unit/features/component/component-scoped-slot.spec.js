@@ -458,7 +458,7 @@ describe('Component scoped slot', () => {
   // new in 2.6, unifying all slots as functions
   it('non-scoped slots should also be available on $scopedSlots', () => {
     const vm = new Vue({
-      template: `<foo>before <div slot="bar">{{ $slot.msg }}</div> after</foo>`,
+      template: `<foo>before <div slot="bar" slot-scope="{ msg }">{{ msg }}</div> after</foo>`,
       components: {
         foo: {
           render(h) {
@@ -632,91 +632,178 @@ describe('Component scoped slot', () => {
     }).then(done)
   })
 
-  // 2.6 $slot usage
-  describe('$slot support', () => {
-    it('should work', () => {
-      const vm = new Vue({
-        template: `<foo><div>{{$slot.foo}}</div></foo>`,
-        components: { foo: { template: `<div><slot foo="hello"/></div>` }}
-      }).$mount()
-      expect(vm.$el.innerHTML).toBe(`<div>hello</div>`)
-    })
-
-    it('should work for use of $slots in attributes', () => {
-      const vm = new Vue({
-        template: `<foo><div :id="$slot.foo"></div></foo>`,
-        components: { foo: { template: `<div><slot foo="hello"/></div>` }}
-      }).$mount()
-      expect(vm.$el.innerHTML).toBe(`<div id="hello"></div>`)
-    })
-
-    it('should work for root text nodes', () => {
-      const vm = new Vue({
-        template: `<foo>{{$slot.foo}}</foo>`,
-        components: { foo: { template: `<div><slot foo="hello"/></div>` }}
-      }).$mount()
-      expect(vm.$el.innerHTML).toBe(`hello`)
-    })
-
-    it('should work for mix of root text nodes and elements', () => {
-      const vm = new Vue({
-        template: `<foo>hi <div>{{ $slot.foo }}</div>{{$slot.foo}}</foo>`,
-        components: { foo: { template: `<div><slot foo="hello"/></div>` }}
-      }).$mount()
-      expect(vm.$el.innerHTML).toBe(`hi <div>hello</div>hello`)
-    })
-
-    it('should work for named slots', () => {
-      const vm = new Vue({
-        template: `<foo><div slot="foo">{{ $slot.foo }}</div></foo>`,
-        components: { foo: { template: `<div><slot name="foo" foo="hello"/></div>` }}
-      }).$mount()
-      expect(vm.$el.innerHTML).toBe(`<div>hello</div>`)
-    })
-
-    it('should work for mixed default and named slots', () => {
-      const vm = new Vue({
-        template: `<foo>{{ $slot.foo }}<div>{{ $slot.foo }}</div><div slot="foo">{{ $slot.foo }}</div></foo>`,
-        components: { foo: { template: `<div><slot foo="default"/><slot name="foo" foo="foo"/></div>` }}
-      }).$mount()
-      expect(vm.$el.innerHTML).toBe(`default<div>default</div><div>foo</div>`)
-    })
-
-    it('should work for mixed $slot and non-$slot slots', () => {
-      const vm = new Vue({
-        template: `<foo>{{ $slot.foo }}<div slot="foo">static</div><div>{{ $slot.foo }}</div></foo>`,
-        components: { foo: { template: `<div><slot foo="default"/><slot name="foo"/></div>` }}
-      }).$mount()
-      expect(vm.$el.innerHTML).toBe(`default<div>default</div><div>static</div>`)
-    })
-
-    // testing $slot detection: bracket access, using $slot alone, passing as arguments...
-    it('should work for alternative $slot usage', () => {
-      const vm = new Vue({
-        template: `<foo>{{ $slot['foo'] }}<div slot="foo">{{ $slot }}</div><div>{{ pick($slot) }}</div></foo>`,
-        methods: { pick: s => s.foo },
-        components: { foo: { template: `<div><slot foo="default"/><slot name="foo"/></div>` }}
-      }).$mount()
-      expect(vm.$el.innerHTML).toBe(`default<div>default</div><div>{}</div>`)
-    })
-
-    // should not consider detection if $slot is inside longer valid identifier
-    it('should not break when template expression uses $slots', () => {
-      const vm = new Vue({
-        data: { some$slot: 123 },
-        template: `<foo>{{ some$slot }}<div slot="foo">{{ $slots }}</div></foo>`,
-        components: {
-          foo: {
-            render(h) {
-              // should be compiled as normal slots
-              expect(this.$slots.default).toBeTruthy()
-              expect(this.$slots.foo).toBeTruthy()
-              return h('div', [this.$slots.default, this.$slots.foo])
-            }
-          }
+  // 2.6 new slot syntax
+  if (process.env.NEW_SLOT_SYNTAX) {
+    describe('v-slot syntax', () => {
+      const Foo = {
+        render(h) {
+          return h('div', [
+            this.$scopedSlots.default && this.$scopedSlots.default('from foo default'),
+            this.$scopedSlots.one && this.$scopedSlots.one('from foo one'),
+            this.$scopedSlots.two && this.$scopedSlots.two('from foo two')
+          ])
         }
-      }).$mount()
-      expect(vm.$el.innerHTML).toBe(`123<div>{}</div>`)
+      }
+
+      const Bar = {
+        render(h) {
+          return this.$scopedSlots.default && this.$scopedSlots.default('from bar')
+        }
+      }
+
+      const Baz = {
+        render(h) {
+          return this.$scopedSlots.default && this.$scopedSlots.default('from baz')
+        }
+      }
+
+      const toNamed = (syntax, name) => syntax.length === 1
+        ? syntax + name // shorthand
+        : syntax + ':' + name // full syntax
+
+      function runSuite(syntax) {
+        it('default slot', () => {
+          const vm = new Vue({
+            template: `<foo ${syntax}="foo">{{ foo }}<div>{{ foo }}</div></foo>`,
+            components: { Foo }
+          }).$mount()
+          expect(vm.$el.innerHTML).toBe(`from foo default<div>from foo default</div>`)
+        })
+
+        it('nested default slots', () => {
+          const vm = new Vue({
+            template: `
+              <foo ${syntax}="foo">
+                <bar ${syntax}="bar">
+                  <baz ${syntax}="baz">
+                    {{ foo }} | {{ bar }} | {{ baz }}
+                  </baz>
+                </bar>
+              </foo>
+            `,
+            components: { Foo, Bar, Baz }
+          }).$mount()
+          expect(vm.$el.innerHTML.trim()).toBe(`from foo default | from bar | from baz`)
+        })
+
+        it('default + named slots', () => {
+          const vm = new Vue({
+            template: `
+              <foo #="foo">
+                {{ foo }}
+                <template ${toNamed(syntax, 'one')}="one">
+                  {{ one }}
+                </template>
+                <template ${toNamed(syntax, 'two')}="two">
+                  {{ two }}
+                </template>
+              </foo>
+            `,
+            components: { Foo }
+          }).$mount()
+          expect(vm.$el.innerHTML.replace(/\s+/g, ' ')).toMatch(`from foo default from foo one from foo two`)
+        })
+
+        it('nested + named + default slots', () => {
+          const vm = new Vue({
+            template: `
+              <foo>
+                <template ${toNamed(syntax, 'one')}="one">
+                  <bar ${syntax}="bar">
+                    {{ one }} {{ bar }}
+                  </bar>
+                </template>
+                <template ${toNamed(syntax, 'two')}="two">
+                  <baz ${syntax}="baz">
+                    {{ two }} {{ baz }}
+                  </baz>
+                </template>
+              </foo>
+            `,
+            components: { Foo, Bar, Baz }
+          }).$mount()
+          expect(vm.$el.innerHTML.replace(/\s+/g, ' ')).toMatch(`from foo one from bar from foo two from baz`)
+        })
+
+        it('should warn v-slot usage on non-component elements', () => {
+          const vm = new Vue({
+            template: `<div ${syntax}="foo"/>`
+          }).$mount()
+          expect(`v-slot cannot be used on non-component elements`).toHaveBeenWarned()
+        })
+
+        it('should warn mixed usage', () => {
+          const vm = new Vue({
+            template: `<foo><bar slot="one" slot-scope="bar" ${syntax}="bar"></bar></foo>`,
+            components: { Foo, Bar }
+          }).$mount()
+          expect(`Unexpected mixed usage of different slot syntaxes`).toHaveBeenWarned()
+        })
+      }
+
+      // run tests for both full syntax and shorthand
+      runSuite('v-slot')
+      runSuite('#')
+
+      it('shorthand named slots', () => {
+        const vm = new Vue({
+          template: `
+            <foo #="foo">
+              {{ foo }}
+              <template #one="one">
+                {{ one }}
+              </template>
+              <template #two="two">
+                {{ two }}
+              </template>
+            </foo>
+          `,
+          components: { Foo }
+        }).$mount()
+        expect(vm.$el.innerHTML.replace(/\s+/g, ' ')).toMatch(`from foo default from foo one from foo two`)
+      })
+
+      it('shorthand without scope variable', () => {
+        const vm = new Vue({
+          template: `
+            <foo>
+              <template #one>one</template>
+              <template #two>two</template>
+            </foo>
+          `,
+          components: { Foo }
+        }).$mount()
+        expect(vm.$el.innerHTML.replace(/\s+/g, ' ')).toMatch(`onetwo`)
+      })
+
+      it('shorthand named slots on root', () => {
+        const vm = new Vue({
+          template: `
+            <foo #one="one">
+              {{ one }}
+            </foo>
+          `,
+          components: { Foo }
+        }).$mount()
+        expect(vm.$el.innerHTML.replace(/\s+/g, ' ')).toMatch(`from foo one`)
+      })
+
+      it('dynamic slot name', () => {
+        const vm = new Vue({
+          data: {
+            a: 'one',
+            b: 'two'
+          },
+          template: `
+            <foo>
+              <template #[a]="one">{{ one }} </template>
+              <template v-slot:[b]="two">{{ two }}</template>
+            </foo>
+          `,
+          components: { Foo }
+        }).$mount()
+        expect(vm.$el.innerHTML.replace(/\s+/g, ' ')).toMatch(`from foo one from foo two`)
+      })
     })
-  })
+  }
 })

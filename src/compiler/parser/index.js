@@ -5,7 +5,7 @@ import { parseHTML } from './html-parser'
 import { parseText } from './text-parser'
 import { parseFilters } from './filter-parser'
 import { genAssignmentCode } from '../directives/model'
-import { extend, cached, no, camelize, hyphenate, hasOwn } from 'shared/util'
+import { extend, cached, no, camelize, hyphenate } from 'shared/util'
 import { isIE, isEdge, isServerRendering } from 'core/util/env'
 
 import {
@@ -17,7 +17,8 @@ import {
   getBindingAttr,
   getAndRemoveAttr,
   getRawBindingAttr,
-  pluckModuleFunction
+  pluckModuleFunction,
+  getAndRemoveAttrByRegex
 } from '../helpers'
 
 export const onRE = /^@|^v-on:/
@@ -25,11 +26,14 @@ export const dirRE = /^v-|^@|^:|^\./
 export const forAliasRE = /([\s\S]*?)\s+(?:in|of)\s+([\s\S]*)/
 export const forIteratorRE = /,([^,\}\]]*)(?:,([^,\}\]]*))?$/
 const stripParensRE = /^\(|\)$/g
+const dynamicKeyRE = /^\[.*\]$/
 
 const argRE = /:(.*)$/
 export const bindRE = /^:|^\.|^v-bind:/
 const propBindRE = /^\./
 const modifierRE = /\.[^.]+/g
+
+const slotRE = /^v-slot(:|$)|^#/
 
 const lineBreakRE = /[\r\n]/
 const whitespaceRE = /\s+/g
@@ -156,7 +160,7 @@ export function parse (
         { start: el.start }
       )
     }
-    if (hasOwn(el.attrsMap, 'v-for')) {
+    if (el.attrsMap.hasOwnProperty('v-for')) {
       warnOnce(
         'Cannot use v-for on stateful component root element because ' +
         'it renders multiple elements.',
@@ -393,7 +397,8 @@ export function processElement (
   )
 
   processRef(element)
-  processSlot(element)
+  processSlotContent(element)
+  processSlotOutlet(element)
   processComponent(element)
   for (let i = 0; i < transforms.length; i++) {
     element = transforms[i](element, options) || element
@@ -545,7 +550,111 @@ function processOnce (el) {
   }
 }
 
-function processSlot (el) {
+// handle content being passed to a component as slot,
+// e.g. <template slot="xxx">, <div slot-scope="xxx">
+function processSlotContent (el) {
+  let slotScope
+  if (el.tag === 'template') {
+    slotScope = getAndRemoveAttr(el, 'scope')
+    /* istanbul ignore if */
+    if (process.env.NODE_ENV !== 'production' && slotScope) {
+      warn(
+        `the "scope" attribute for scoped slots have been deprecated and ` +
+        `replaced by "slot-scope" since 2.5. The new "slot-scope" attribute ` +
+        `can also be used on plain elements in addition to <template> to ` +
+        `denote scoped slots.`,
+        el.rawAttrsMap['scope'],
+        true
+      )
+    }
+    el.slotScope = slotScope || getAndRemoveAttr(el, 'slot-scope')
+  } else if ((slotScope = getAndRemoveAttr(el, 'slot-scope'))) {
+    /* istanbul ignore if */
+    if (process.env.NODE_ENV !== 'production' && el.attrsMap['v-for']) {
+      warn(
+        `Ambiguous combined usage of slot-scope and v-for on <${el.tag}> ` +
+        `(v-for takes higher priority). Use a wrapper <template> for the ` +
+        `scoped slot to make it clearer.`,
+        el.rawAttrsMap['slot-scope'],
+        true
+      )
+    }
+    el.slotScope = slotScope
+  }
+
+  // slot="xxx"
+  const slotTarget = getBindingAttr(el, 'slot')
+  if (slotTarget) {
+    el.slotTarget = slotTarget === '""' ? '"default"' : slotTarget
+    // preserve slot as an attribute for native shadow DOM compat
+    // only for non-scoped slots.
+    if (el.tag !== 'template' && !el.slotScope) {
+      addAttr(el, 'slot', slotTarget, getRawBindingAttr(el, 'slot'))
+    }
+  }
+
+  // 2.6 v-slot syntax
+  if (process.env.NEW_SLOT_SYNTAX) {
+    if (el.tag === 'template') {
+      // v-slot on <template>
+      const slotBinding = getAndRemoveAttrByRegex(el, slotRE)
+      if (slotBinding) {
+        if (
+          process.env.NODE_ENV !== 'production' &&
+          (el.slotTarget || el.slotScope)
+        ) {
+          warn(
+            `Unexpected mixed usage of different slot syntaxes.`,
+            el
+          )
+        }
+        el.slotTarget = getSlotName(slotBinding)
+        el.slotScope = slotBinding.value
+      }
+    } else {
+      // v-slot on component, denotes default slot
+      const slotBinding = getAndRemoveAttrByRegex(el, slotRE)
+      if (slotBinding) {
+        if (process.env.NODE_ENV !== 'production') {
+          if (!maybeComponent(el)) {
+            warn(
+              `v-slot cannot be used on non-component elements.`,
+              slotBinding
+            )
+          }
+          if (el.slotScope || el.slotTarget) {
+            warn(
+              `Unexpected mixed usage of different slot syntaxes.`,
+              el
+            )
+          }
+        }
+        // add the component's children to its default slot
+        const slots = el.scopedSlots || (el.scopedSlots = {})
+        const target = getSlotName(slotBinding)
+        const slotContainer = slots[target] = createASTElement('template', [], el)
+        slotContainer.children = el.children
+        slotContainer.slotScope = slotBinding.value
+        // remove children as they are returned from scopedSlots now
+        el.children = []
+        // mark el non-plain so data gets generated
+        el.plain = false
+      }
+    }
+  }
+}
+
+function getSlotName ({ name }) {
+  name = name.replace(slotRE, '')
+  return dynamicKeyRE.test(name)
+    // dynamic [name]
+    ? name.slice(1, -1)
+    // static name
+    : `"${name || `default`}"`
+}
+
+// handle <slot/> outlets
+function processSlotOutlet (el) {
   if (el.tag === 'slot') {
     el.slotName = getBindingAttr(el, 'name')
     if (process.env.NODE_ENV !== 'production' && el.key) {
@@ -555,111 +664,6 @@ function processSlot (el) {
         `Use the key on a wrapping element instead.`,
         getRawBindingAttr(el, 'key')
       )
-    }
-  } else {
-    let slotScope
-    if (el.tag === 'template') {
-      slotScope = getAndRemoveAttr(el, 'scope')
-      /* istanbul ignore if */
-      if (process.env.NODE_ENV !== 'production' && slotScope) {
-        warn(
-          `the "scope" attribute for scoped slots have been deprecated and ` +
-          `replaced by "slot-scope" since 2.5. The new "slot-scope" attribute ` +
-          `can also be used on plain elements in addition to <template> to ` +
-          `denote scoped slots.`,
-          el.rawAttrsMap['scope'],
-          true
-        )
-      }
-      el.slotScope = slotScope || getAndRemoveAttr(el, 'slot-scope')
-    } else if ((slotScope = getAndRemoveAttr(el, 'slot-scope'))) {
-      /* istanbul ignore if */
-      if (process.env.NODE_ENV !== 'production' && el.attrsMap['v-for']) {
-        warn(
-          `Ambiguous combined usage of slot-scope and v-for on <${el.tag}> ` +
-          `(v-for takes higher priority). Use a wrapper <template> for the ` +
-          `scoped slot to make it clearer.`,
-          el.rawAttrsMap['slot-scope'],
-          true
-        )
-      }
-      el.slotScope = slotScope
-      if (process.env.NODE_ENV !== 'production' && nodeHas$Slot(el)) {
-        warn('Unepxected mixed usage of `slot-scope` and `$slot`.', el)
-      }
-    } else {
-      // 2.6 $slot support
-      // Context: https://github.com/vuejs/vue/issues/9180
-      // Ideally, all slots should be compiled as functions (this is what we
-      // are doing in 3.x), but for 2.x e want to preserve complete backwards
-      // compatibility, and maintain the exact same compilation output for any
-      // code that does not use the new syntax.
-
-      // recursively check component children for presence of `$slot` in all
-      // expressions until running into a nested child component.
-      if (maybeComponent(el) && childrenHas$Slot(el)) {
-        processScopedSlots(el)
-      }
-    }
-    const slotTarget = getBindingAttr(el, 'slot')
-    if (slotTarget) {
-      el.slotTarget = slotTarget === '""' ? '"default"' : slotTarget
-      // preserve slot as an attribute for native shadow DOM compat
-      // only for non-scoped slots.
-      if (el.tag !== 'template' && !el.slotScope && !nodeHas$Slot(el)) {
-        addAttr(el, 'slot', slotTarget, getRawBindingAttr(el, 'slot'))
-      }
-    }
-  }
-}
-
-function childrenHas$Slot (el): boolean {
-  return el.children ? el.children.some(nodeHas$Slot) : false
-}
-
-const $slotRE = /(^|[^\w_$])\$slot($|[^\w_$])/
-function nodeHas$Slot (node): boolean {
-  // caching
-  if (hasOwn(node, 'has$Slot')) {
-    return (node.has$Slot: any)
-  }
-  if (node.type === 1) { // element
-    for (const key in node.attrsMap) {
-      if (dirRE.test(key) && $slotRE.test(node.attrsMap[key])) {
-        return (node.has$Slot = true)
-      }
-    }
-    return (node.has$Slot = childrenHas$Slot(node))
-  } else if (node.type === 2) { // expression
-    // TODO more robust logic for checking $slot usage
-    return (node.has$Slot = $slotRE.test(node.expression))
-  }
-  return false
-}
-
-function processScopedSlots (el) {
-  // 1. group children by slot target
-  const groups: any = {}
-  for (let i = 0; i < el.children.length; i++) {
-    const child = el.children[i]
-    const target = child.slotTarget || '"default"'
-    if (!groups[target]) {
-      groups[target] = []
-    }
-    groups[target].push(child)
-  }
-  // 2. for each slot group, check if the group contains $slot
-  for (const name in groups) {
-    const group = groups[name]
-    if (group.some(nodeHas$Slot)) {
-      // 3. if a group contains $slot, all nodes in that group gets assigned
-      // as a scoped slot to el and removed from children
-      el.plain = false
-      const slots = el.scopedSlots || (el.scopedSlots = {})
-      const slotContainer = slots[name] = createASTElement('template', [], el)
-      slotContainer.children = group
-      slotContainer.slotScope = '$slot'
-      el.children = el.children.filter(c => group.indexOf(c) === -1)
     }
   }
 }
