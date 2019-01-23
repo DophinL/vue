@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Vue.js github commits example</title>
+  <style>
+    #demo {
+      font-family: 'Helvetica', Arial, sans-serif;
+    }
+
+    .myclass {
+      color: red;
+    }
+
+    .item {
+      margin-right: 10px;
+    }
+  </style>
+  <!-- Delete ".min" for console warnings in development -->
+  <script src="../../dist/vue.js"></script>
+</head>
+
+<body>
+  <div id="demo">
+    <div class="testclass"></div>
+    <div :class="c" class="demo" v-if="isShow">
+      <span class="item" v-for="item in strs">{{item}}</span>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+
+</html>
