@@ -178,9 +178,16 @@ export function parse (
     shouldDecodeNewlinesForHref: options.shouldDecodeNewlinesForHref,
     shouldKeepComment: options.comments,
     outputSourceRange: options.outputSourceRange,
+    /**
+     * 核心：
+     * 1.ast化
+     * 2.生成element，放到栈里面
+     * 3.提取特殊属性，比如v-if、v-for等
+     */
     start (tag, attrs, unary, start) {
       // check namespace.
       // inherit parent ns if there is one
+      // @? 这是什么
       const ns = (currentParent && currentParent.ns) || platformGetTagNamespace(tag)
 
       // handle IE svg bug
@@ -202,6 +209,7 @@ export function parse (
         }, {})
       }
 
+      // 不允许style、script
       if (isForbiddenTag(element) && !isServerRendering()) {
         element.forbidden = true
         process.env.NODE_ENV !== 'production' && warn(
@@ -213,10 +221,12 @@ export function parse (
       }
 
       // apply pre-transforms
+      // @? 这是什么
       for (let i = 0; i < preTransforms.length; i++) {
         element = preTransforms[i](element, options) || element
       }
 
+      // v-pre处理
       if (!inVPre) {
         processPre(element)
         if (element.pre) {
@@ -226,6 +236,7 @@ export function parse (
       if (platformIsPreTag(element.tag)) {
         inPre = true
       }
+      // 带有v-pre，意味着element.pre已经为true了
       if (inVPre) {
         processRawAttrs(element)
       } else if (!element.processed) {
@@ -242,10 +253,12 @@ export function parse (
         }
       }
 
+      // 如果不是 input这类可以直接闭合的标签
       if (!unary) {
         currentParent = element
         stack.push(element)
       } else {
+        // TODO
         closeElement(element)
       }
     },
@@ -361,6 +374,7 @@ function processPre (el) {
   }
 }
 
+// 纯粹的处理element.attrs属性
 function processRawAttrs (el) {
   const list = el.attrsList
   const len = list.length
@@ -378,6 +392,7 @@ function processRawAttrs (el) {
     }
   } else if (!el.pre) {
     // non root node in pre blocks with no attributes
+    // 如<pre></pre>，<span></span>，没有任何附带attr，也没有v-pre
     el.plain = true
   }
 }
@@ -483,6 +498,7 @@ export function parseFor (exp: string): ?ForParseResult {
   return res
 }
 
+// 给element添加 if v-else v-else-if 等属性，并从attrList中移除
 function processIf (el) {
   const exp = getAndRemoveAttr(el, 'v-if')
   if (exp) {

@@ -18,6 +18,7 @@ const attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]*)"+|'([^']*)'+|([^\s
 const ncname = `[a-zA-Z_][\\-\\.0-9_a-zA-Z${unicodeLetters}]*`
 const qnameCapture = `((?:${ncname}\\:)?${ncname})`
 const startTagOpen = new RegExp(`^<${qnameCapture}`)
+// $1代表结束标签，比如<br />
 const startTagClose = /^\s*(\/?)>/
 const endTag = new RegExp(`^<\\/${qnameCapture}[^>]*>`)
 const doctype = /^<!DOCTYPE [^>]+>/i
@@ -44,6 +45,7 @@ const encodedAttrWithNewLines = /&(?:lt|gt|quot|amp|#10|#9);/g
 const isIgnoreNewlineTag = makeMap('pre,textarea', true)
 const shouldIgnoreFirstNewline = (tag, html) => tag && isIgnoreNewlineTag(tag) && html[0] === '\n'
 
+// 对attr解码，比如把 &lt; 换成 <
 function decodeAttr (value, shouldDecodeNewlines) {
   const re = shouldDecodeNewlines ? encodedAttrWithNewLines : encodedAttr
   return value.replace(re, match => decodingMap[match])
@@ -55,6 +57,7 @@ export function parseHTML (html, options) {
   const isUnaryTag = options.isUnaryTag || no
   const canBeLeftOpenTag = options.canBeLeftOpenTag || no
   let index = 0
+  // @? lastTag是什么
   let last, lastTag
   while (html) {
     last = html
@@ -112,6 +115,7 @@ export function parseHTML (html, options) {
         }
       }
 
+      // text处理
       let text, rest, next
       if (textEnd >= 0) {
         rest = html.slice(textEnd)
@@ -130,6 +134,7 @@ export function parseHTML (html, options) {
         text = html.substring(0, textEnd)
       }
 
+      // 整个template都是纯文本
       if (textEnd < 0) {
         text = html
       }
@@ -142,6 +147,7 @@ export function parseHTML (html, options) {
         options.chars(text, index - text.length, index)
       }
     } else {
+      // @? 这段逻辑在做什么？
       let endTagLength = 0
       const stackedTag = lastTag.toLowerCase()
       const reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'))
@@ -182,16 +188,19 @@ export function parseHTML (html, options) {
     html = html.substring(n)
   }
 
+  // 解析startTag，拿到原始的tagName、attrs等数据
+  // 我以为是先把start tag close找到，再去解析字符串；实际上是一步一步来
   function parseStartTag () {
     const start = html.match(startTagOpen)
     if (start) {
       const match = {
         tagName: start[1],
-        attrs: [],
+        attrs: [],  // 为match后的结果，还没有处理
         start: index
       }
       advance(start[0].length)
       let end, attr
+      // @? 如果没有匹配到attribute，但也没结束？
       while (!(end = html.match(startTagClose)) && (attr = html.match(attribute))) {
         attr.start = index
         advance(attr[0].length)
@@ -207,10 +216,16 @@ export function parseHTML (html, options) {
     }
   }
 
+  /**
+   * 主要是生成attrs，并对值decode
+   * 剩余的职能靠start完成
+   */
   function handleStartTag (match) {
     const tagName = match.tagName
+    // 结束标记，如<br /> <input />
     const unarySlash = match.unarySlash
 
+    // @?
     if (expectHTML) {
       if (lastTag === 'p' && isNonPhrasingTag(tagName)) {
         parseEndTag(lastTag)
@@ -220,12 +235,14 @@ export function parseHTML (html, options) {
       }
     }
 
+    // 有可能是input，不需要写 /
     const unary = isUnaryTag(tagName) || !!unarySlash
 
     const l = match.attrs.length
     const attrs = new Array(l)
     for (let i = 0; i < l; i++) {
       const args = match.attrs[i]
+      // @? 为什么这样写
       const value = args[3] || args[4] || args[5] || ''
       const shouldDecodeNewlines = tagName === 'a' && args[1] === 'href'
         ? options.shouldDecodeNewlinesForHref
@@ -234,6 +251,8 @@ export function parseHTML (html, options) {
         name: args[1],
         value: decodeAttr(value, shouldDecodeNewlines)
       }
+
+      // @? 为什么区分production？start为什么要变化
       if (process.env.NODE_ENV !== 'production' && options.outputSourceRange) {
         attrs[i].start = args.start + args[0].match(/^\s*/).length
         attrs[i].end = args.end
@@ -242,9 +261,11 @@ export function parseHTML (html, options) {
 
     if (!unary) {
       stack.push({ tag: tagName, lowerCasedTag: tagName.toLowerCase(), attrs: attrs, start: match.start, end: match.end })
+      // lastTag的设置，顾名思义
       lastTag = tagName
     }
 
+    // 重要步骤，前面都只是在处理基础的数据
     if (options.start) {
       options.start(tagName, attrs, unary, match.start, match.end)
     }

@@ -373,7 +373,7 @@
     'activated',
     'deactivated',
     'errorCaptured',
-    'ssrPrefetch'
+    'serverPrefetch'
   ];
 
   /*  */
@@ -8995,6 +8995,7 @@
   var ncname = "[a-zA-Z_][\\-\\.0-9_a-zA-Z" + unicodeLetters + "]*";
   var qnameCapture = "((?:" + ncname + "\\:)?" + ncname + ")";
   var startTagOpen = new RegExp(("^<" + qnameCapture));
+  // $1代表结束标签，比如<br />
   var startTagClose = /^\s*(\/?)>/;
   var endTag = new RegExp(("^<\\/" + qnameCapture + "[^>]*>"));
   var doctype = /^<!DOCTYPE [^>]+>/i;
@@ -9032,6 +9033,7 @@
     var isUnaryTag$$1 = options.isUnaryTag || no;
     var canBeLeftOpenTag$$1 = options.canBeLeftOpenTag || no;
     var index = 0;
+    // @? lastTag是什么
     var last, lastTag;
     while (html) {
       last = html;
@@ -9089,6 +9091,7 @@
           }
         }
 
+        // text处理
         var text = (void 0), rest = (void 0), next = (void 0);
         if (textEnd >= 0) {
           rest = html.slice(textEnd);
@@ -9107,6 +9110,7 @@
           text = html.substring(0, textEnd);
         }
 
+        // 整个template都是纯文本
         if (textEnd < 0) {
           text = html;
         }
@@ -9119,6 +9123,7 @@
           options.chars(text, index - text.length, index);
         }
       } else {
+        // @? 这段逻辑在做什么？
         var endTagLength = 0;
         var stackedTag = lastTag.toLowerCase();
         var reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'));
@@ -9159,16 +9164,18 @@
       html = html.substring(n);
     }
 
+    // 我以为是先把start tag close找到，再去解析字符串；实际上是一步一步来
     function parseStartTag () {
       var start = html.match(startTagOpen);
       if (start) {
         var match = {
           tagName: start[1],
-          attrs: [],
+          attrs: [],  // 为match后的结果，还没有处理
           start: index
         };
         advance(start[0].length);
         var end, attr;
+        // @? 如果没有匹配到attribute，但也没结束？
         while (!(end = html.match(startTagClose)) && (attr = html.match(attribute))) {
           attr.start = index;
           advance(attr[0].length);
@@ -9186,6 +9193,7 @@
 
     function handleStartTag (match) {
       var tagName = match.tagName;
+      // 结束标记，如<br /> <input />
       var unarySlash = match.unarySlash;
 
       if (expectHTML) {
@@ -9817,10 +9825,7 @@
           true
         );
       }
-      el.slotScope = (
-        slotScope ||
-        getAndRemoveAttr(el, 'slot-scope')
-      );
+      el.slotScope = slotScope || getAndRemoveAttr(el, 'slot-scope');
     } else if ((slotScope = getAndRemoveAttr(el, 'slot-scope'))) {
       /* istanbul ignore if */
       if (el.attrsMap['v-for']) {
@@ -11436,3 +11441,4 @@
   return Vue;
 
 }));
+//# sourceMappingURL=vue.js.map
