@@ -104,22 +104,29 @@ export function parse (
     }
   }
 
+  /**
+   * 1.处理 带 v-if, v-else-if and v-else 的根节点
+   * 2.建立父子关系
+   */
   function closeElement (element) {
     if (!inVPre && !element.processed) {
       element = processElement(element, options)
     }
     // tree management
+    // @? root为v-if, v-else-if and v-else
     if (!stack.length && element !== root) {
       // allow root elements with v-if, v-else-if and v-else
       if (root.if && (element.elseif || element.else)) {
         if (process.env.NODE_ENV !== 'production') {
           checkRootConstraints(element)
         }
+        // if condition是一个array，可以通过else if这种来累积
         addIfCondition(root, {
           exp: element.elseif,
           block: element
         })
       } else if (process.env.NODE_ENV !== 'production') {
+        // @? 不报错吗？
         warnOnce(
           `Component template should contain exactly one root element. ` +
           `If you are using v-if on multiple elements, ` +
@@ -128,6 +135,7 @@ export function parse (
         )
       }
     }
+    // 核心代码，建立父子关系
     if (currentParent && !element.forbidden) {
       if (element.elseif || element.else) {
         processIfConditions(element, currentParent)
@@ -135,6 +143,7 @@ export function parse (
         const name = element.slotTarget || '"default"'
         ;(currentParent.scopedSlots || (currentParent.scopedSlots = {}))[name] = element
       } else {
+        // @? 为什么这时候才做？看起来parent重复了？
         currentParent.children.push(element)
         element.parent = currentParent
       }
@@ -258,13 +267,18 @@ export function parse (
         currentParent = element
         stack.push(element)
       } else {
-        // TODO
         closeElement(element)
       }
     },
 
+    /**
+     * 1.stack操作
+     * 2.currentParent处理
+     * 3.清除当前元素中多余空节点
+     */
     end (tag, start, end) {
       const element = stack[stack.length - 1]
+
       if (!inPre) {
         // remove trailing whitespace node
         const lastNode = element.children[element.children.length - 1]

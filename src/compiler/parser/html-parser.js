@@ -62,6 +62,7 @@ export function parseHTML (html, options) {
   while (html) {
     last = html
     // Make sure we're not in a plaintext content element like script/style
+    // @?
     if (!lastTag || !isPlainTextElement(lastTag)) {
       let textEnd = html.indexOf('<')
       if (textEnd === 0) {
@@ -171,6 +172,7 @@ export function parseHTML (html, options) {
       parseEndTag(stackedTag, index - endTagLength, index)
     }
 
+    // @?
     if (html === last) {
       options.chars && options.chars(html)
       if (process.env.NODE_ENV !== 'production' && !stack.length && options.warn) {
@@ -271,6 +273,9 @@ export function parseHTML (html, options) {
     }
   }
 
+  /**
+   * 核心是做清栈操作
+   */
   function parseEndTag (tagName, start, end) {
     let pos, lowerCasedTagName
     if (start == null) start = index
@@ -285,6 +290,7 @@ export function parseHTML (html, options) {
         }
       }
     } else {
+      // @?
       // If no tag name is provided, clean shop
       pos = 0
     }
@@ -314,6 +320,7 @@ export function parseHTML (html, options) {
         options.start(tagName, [], true, start, end)
       }
     } else if (lowerCasedTagName === 'p') {
+      // @?
       if (options.start) {
         options.start(tagName, [], false, start, end)
       }
