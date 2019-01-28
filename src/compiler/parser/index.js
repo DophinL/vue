@@ -263,7 +263,17 @@ export function parse(
       }
 
       // @mycode
-      // const cp = stack[stack.length - 1]
+      // if (currentParent && !element.forbidden) {
+      //   if (element.elseif || element.else) {
+      //     processIfConditions(element, currentParent)
+      //   } else if (element.slotScope) { // scoped slot
+      //     const name = element.slotTarget || '"default"'
+      //     ;(currentParent.scopedSlots || (currentParent.scopedSlots = {}))[name] = element
+      //   } else {
+      //     currentParent.children.push(element)
+      //     element.parent = currentParent
+      //   }
+      // }
 
       // 如果不是 input这类可以直接闭合的标签
       if (!unary) {
@@ -272,19 +282,6 @@ export function parse(
       } else {
         closeElement(element)
       }
-
-      // @mycode
-      // if (cp && !element.forbidden) {
-      //   if (element.elseif || element.else) {
-      //     processIfConditions(element, cp)
-      //   } else if (element.slotScope) { // scoped slot
-      //     const name = element.slotTarget || '"default"'
-      //     ;(cp.scopedSlots || (cp.scopedSlots = {}))[name] = element
-      //   } else {
-      //     cp.children.push(element)
-      //     element.parent = cp
-      //   }
-      // }
     },
 
     /**
