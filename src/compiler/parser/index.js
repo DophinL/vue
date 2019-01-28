@@ -1,12 +1,12 @@
 /* @flow */
 
 import he from 'he'
-import { parseHTML } from './html-parser'
-import { parseText } from './text-parser'
-import { parseFilters } from './filter-parser'
-import { genAssignmentCode } from '../directives/model'
-import { extend, cached, no, camelize, hyphenate } from 'shared/util'
-import { isIE, isEdge, isServerRendering } from 'core/util/env'
+import {parseHTML} from './html-parser'
+import {parseText} from './text-parser'
+import {parseFilters} from './filter-parser'
+import {genAssignmentCode} from '../directives/model'
+import {extend, cached, no, camelize, hyphenate} from 'shared/util'
+import {isIE, isEdge, isServerRendering} from 'core/util/env'
 
 import {
   addProp,
@@ -51,7 +51,7 @@ let platformMustUseProp
 let platformGetTagNamespace
 let maybeComponent
 
-export function createASTElement (
+export function createASTElement(
   tag: string,
   attrs: Array<ASTAttr>,
   parent: ASTElement | void
@@ -70,7 +70,7 @@ export function createASTElement (
 /**
  * Convert HTML string to AST.
  */
-export function parse (
+export function parse(
   template: string,
   options: CompilerOptions
 ): ASTElement | void {
@@ -97,7 +97,7 @@ export function parse (
   let inPre = false
   let warned = false
 
-  function warnOnce (msg, range) {
+  function warnOnce(msg, range) {
     if (!warned) {
       warned = true
       warn(msg, range)
@@ -108,7 +108,7 @@ export function parse (
    * 1.处理 带 v-if, v-else-if and v-else 的根节点
    * 2.建立父子关系
    */
-  function closeElement (element) {
+  function closeElement(element) {
     if (!inVPre && !element.processed) {
       element = processElement(element, options)
     }
@@ -131,7 +131,7 @@ export function parse (
           `Component template should contain exactly one root element. ` +
           `If you are using v-if on multiple elements, ` +
           `use v-else-if to chain them instead.`,
-          { start: element.start }
+          {start: element.start}
         )
       }
     }
@@ -143,7 +143,6 @@ export function parse (
         const name = element.slotTarget || '"default"'
         ;(currentParent.scopedSlots || (currentParent.scopedSlots = {}))[name] = element
       } else {
-        // @? 为什么这时候才做？看起来parent重复了？
         currentParent.children.push(element)
         element.parent = currentParent
       }
@@ -161,12 +160,12 @@ export function parse (
     }
   }
 
-  function checkRootConstraints (el) {
+  function checkRootConstraints(el) {
     if (el.tag === 'slot' || el.tag === 'template') {
       warnOnce(
         `Cannot use <${el.tag}> as component root element because it may ` +
         'contain multiple nodes.',
-        { start: el.start }
+        {start: el.start}
       )
     }
     if (el.attrsMap.hasOwnProperty('v-for')) {
@@ -181,6 +180,7 @@ export function parse (
   parseHTML(template, {
     warn,
     expectHTML: options.expectHTML,
+    // @design: 开放封闭原则，因为unaryTag可能随着标准的升级而变化，所以把这块变化封装起来
     isUnaryTag: options.isUnaryTag,
     canBeLeftOpenTag: options.canBeLeftOpenTag,
     shouldDecodeNewlines: options.shouldDecodeNewlines,
@@ -193,7 +193,7 @@ export function parse (
      * 2.生成element，放到栈里面
      * 3.提取特殊属性，比如v-if、v-for等
      */
-    start (tag, attrs, unary, start) {
+    start(tag, attrs, unary, start) {
       // check namespace.
       // inherit parent ns if there is one
       // @? 这是什么
@@ -225,7 +225,7 @@ export function parse (
           'Templates should only be responsible for mapping the state to the ' +
           'UI. Avoid placing tags with side-effects in your templates, such as ' +
           `<${tag}>` + ', as they will not be parsed.',
-          { start: element.start }
+          {start: element.start}
         )
       }
 
@@ -262,6 +262,9 @@ export function parse (
         }
       }
 
+      // @mycode
+      // const cp = stack[stack.length - 1]
+
       // 如果不是 input这类可以直接闭合的标签
       if (!unary) {
         currentParent = element
@@ -269,6 +272,19 @@ export function parse (
       } else {
         closeElement(element)
       }
+
+      // @mycode
+      // if (cp && !element.forbidden) {
+      //   if (element.elseif || element.else) {
+      //     processIfConditions(element, cp)
+      //   } else if (element.slotScope) { // scoped slot
+      //     const name = element.slotTarget || '"default"'
+      //     ;(cp.scopedSlots || (cp.scopedSlots = {}))[name] = element
+      //   } else {
+      //     cp.children.push(element)
+      //     element.parent = cp
+      //   }
+      // }
     },
 
     /**
@@ -276,7 +292,7 @@ export function parse (
      * 2.currentParent处理
      * 3.清除当前元素中多余空节点
      */
-    end (tag, start, end) {
+    end(tag, start, end) {
       const element = stack[stack.length - 1]
 
       if (!inPre) {
@@ -295,18 +311,18 @@ export function parse (
       closeElement(element)
     },
 
-    chars (text: string, start: number, end: number) {
+    chars(text: string, start: number, end: number) {
       if (!currentParent) {
         if (process.env.NODE_ENV !== 'production') {
           if (text === template) {
             warnOnce(
               'Component template requires a root element, rather than just text.',
-              { start }
+              {start}
             )
           } else if ((text = text.trim())) {
             warnOnce(
               `text "${text}" outside root element will be ignored.`,
-              { start }
+              {start}
             )
           }
         }
@@ -366,7 +382,7 @@ export function parse (
         }
       }
     },
-    comment (text: string, start, end) {
+    comment(text: string, start, end) {
       const child: ASTText = {
         type: 3,
         text,
@@ -382,14 +398,14 @@ export function parse (
   return root
 }
 
-function processPre (el) {
+function processPre(el) {
   if (getAndRemoveAttr(el, 'v-pre') != null) {
     el.pre = true
   }
 }
 
 // 纯粹的处理element.attrs属性
-function processRawAttrs (el) {
+function processRawAttrs(el) {
   const list = el.attrsList
   const len = list.length
   if (len) {
@@ -411,7 +427,7 @@ function processRawAttrs (el) {
   }
 }
 
-export function processElement (
+export function processElement(
   element: ASTElement,
   options: CompilerOptions
 ) {
@@ -436,7 +452,7 @@ export function processElement (
   return element
 }
 
-function processKey (el) {
+function processKey(el) {
   const exp = getBindingAttr(el, 'key')
   if (exp) {
     if (process.env.NODE_ENV !== 'production') {
@@ -463,7 +479,7 @@ function processKey (el) {
   }
 }
 
-function processRef (el) {
+function processRef(el) {
   const ref = getBindingAttr(el, 'ref')
   if (ref) {
     el.ref = ref
@@ -471,7 +487,7 @@ function processRef (el) {
   }
 }
 
-export function processFor (el: ASTElement) {
+export function processFor(el: ASTElement) {
   let exp
   if ((exp = getAndRemoveAttr(el, 'v-for'))) {
     const res = parseFor(exp)
@@ -493,7 +509,7 @@ type ForParseResult = {
   iterator2?: string;
 };
 
-export function parseFor (exp: string): ?ForParseResult {
+export function parseFor(exp: string): ?ForParseResult {
   const inMatch = exp.match(forAliasRE)
   if (!inMatch) return
   const res = {}
@@ -513,7 +529,7 @@ export function parseFor (exp: string): ?ForParseResult {
 }
 
 // 给element添加 if v-else v-else-if 等属性，并从attrList中移除
-function processIf (el) {
+function processIf(el) {
   const exp = getAndRemoveAttr(el, 'v-if')
   if (exp) {
     el.if = exp
@@ -532,7 +548,13 @@ function processIf (el) {
   }
 }
 
-function processIfConditions (el, parent) {
+/**
+ * 找到前一个element，如果带if，则往ifConditions数组里面添加{exp,block}
+ * @? 如果前一个element带 else-if，那不是就不做任何处理？
+ * @answer 前一个element不可能带else-if，因为parent.children里面不会存，else-if星河中都加入到if元素里面去了
+ * @? else的怎么处理？
+ */
+function processIfConditions(el, parent) {
   const prev = findPrevElement(parent.children)
   if (prev && prev.if) {
     addIfCondition(prev, {
@@ -548,7 +570,7 @@ function processIfConditions (el, parent) {
   }
 }
 
-function findPrevElement (children: Array<any>): ASTElement | void {
+function findPrevElement(children: Array<any>): ASTElement | void {
   let i = children.length
   while (i--) {
     if (children[i].type === 1) {
@@ -566,14 +588,14 @@ function findPrevElement (children: Array<any>): ASTElement | void {
   }
 }
 
-export function addIfCondition (el: ASTElement, condition: ASTIfCondition) {
+export function addIfCondition(el: ASTElement, condition: ASTIfCondition) {
   if (!el.ifConditions) {
     el.ifConditions = []
   }
   el.ifConditions.push(condition)
 }
 
-function processOnce (el) {
+function processOnce(el) {
   const once = getAndRemoveAttr(el, 'v-once')
   if (once != null) {
     el.once = true
@@ -582,7 +604,7 @@ function processOnce (el) {
 
 // handle content being passed to a component as slot,
 // e.g. <template slot="xxx">, <div slot-scope="xxx">
-function processSlotContent (el) {
+function processSlotContent(el) {
   let slotScope
   if (el.tag === 'template') {
     slotScope = getAndRemoveAttr(el, 'scope')
@@ -674,7 +696,7 @@ function processSlotContent (el) {
   }
 }
 
-function getSlotName ({ name }) {
+function getSlotName({name}) {
   name = name.replace(slotRE, '')
   return dynamicKeyRE.test(name)
     // dynamic [name]
@@ -684,7 +706,7 @@ function getSlotName ({ name }) {
 }
 
 // handle <slot/> outlets
-function processSlotOutlet (el) {
+function processSlotOutlet(el) {
   if (el.tag === 'slot') {
     el.slotName = getBindingAttr(el, 'name')
     if (process.env.NODE_ENV !== 'production' && el.key) {
@@ -698,7 +720,7 @@ function processSlotOutlet (el) {
   }
 }
 
-function processComponent (el) {
+function processComponent(el) {
   let binding
   if ((binding = getBindingAttr(el, 'is'))) {
     el.component = binding
@@ -708,7 +730,7 @@ function processComponent (el) {
   }
 }
 
-function processAttrs (el) {
+function processAttrs(el) {
   const list = el.attrsList
   let i, l, name, rawName, value, modifiers, isProp, syncGen
   for (i = 0, l = list.length; i < l; i++) {
@@ -812,15 +834,15 @@ function processAttrs (el) {
       // #6887 firefox doesn't update muted state if set via attribute
       // even immediately after element creation
       if (!el.component &&
-          name === 'muted' &&
-          platformMustUseProp(el.tag, el.attrsMap.type, name)) {
+        name === 'muted' &&
+        platformMustUseProp(el.tag, el.attrsMap.type, name)) {
         addProp(el, name, 'true', list[i])
       }
     }
   }
 }
 
-function checkInFor (el: ASTElement): boolean {
+function checkInFor(el: ASTElement): boolean {
   let parent = el
   while (parent) {
     if (parent.for !== undefined) {
@@ -831,16 +853,18 @@ function checkInFor (el: ASTElement): boolean {
   return false
 }
 
-function parseModifiers (name: string): Object | void {
+function parseModifiers(name: string): Object | void {
   const match = name.match(modifierRE)
   if (match) {
     const ret = {}
-    match.forEach(m => { ret[m.slice(1)] = true })
+    match.forEach(m => {
+      ret[m.slice(1)] = true
+    })
     return ret
   }
 }
 
-function makeAttrsMap (attrs: Array<Object>): Object {
+function makeAttrsMap(attrs: Array<Object>): Object {
   const map = {}
   for (let i = 0, l = attrs.length; i < l; i++) {
     if (
@@ -855,11 +879,11 @@ function makeAttrsMap (attrs: Array<Object>): Object {
 }
 
 // for script (e.g. type="x/template") or style, do not decode content
-function isTextTag (el): boolean {
+function isTextTag(el): boolean {
   return el.tag === 'script' || el.tag === 'style'
 }
 
-function isForbiddenTag (el): boolean {
+function isForbiddenTag(el): boolean {
   return (
     el.tag === 'style' ||
     (el.tag === 'script' && (
@@ -873,7 +897,7 @@ const ieNSBug = /^xmlns:NS\d+/
 const ieNSPrefix = /^NS\d+:/
 
 /* istanbul ignore next */
-function guardIESVGBug (attrs) {
+function guardIESVGBug(attrs) {
   const res = []
   for (let i = 0; i < attrs.length; i++) {
     const attr = attrs[i]
@@ -885,7 +909,7 @@ function guardIESVGBug (attrs) {
   return res
 }
 
-function checkForAliasModel (el, value) {
+function checkForAliasModel(el, value) {
   let _el = el
   while (_el) {
     if (_el.for && _el.alias === value) {

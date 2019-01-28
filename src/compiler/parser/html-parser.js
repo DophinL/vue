@@ -275,6 +275,7 @@ export function parseHTML (html, options) {
 
   /**
    * 核心是做清栈操作
+   * @? 注意有哪些地方用到了
    */
   function parseEndTag (tagName, start, end) {
     let pos, lowerCasedTagName
