@@ -51,9 +51,11 @@ export function initMixin (Vue: Class<Component>) {
     vm._self = vm
     initLifecycle(vm)
     initEvents(vm)
+    // @important
     initRender(vm)
     callHook(vm, 'beforeCreate')
     initInjections(vm) // resolve injections before data/props
+    // @important
     initState(vm)
     initProvide(vm) // resolve provide after data/props
     callHook(vm, 'created')

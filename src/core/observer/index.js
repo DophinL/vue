@@ -131,6 +131,7 @@ export function observe (value: any, asRootData: ?boolean): Observer | void {
 
 /**
  * Define a reactive property on an Object.
+ * @important
  */
 export function defineReactive (
   obj: Object,

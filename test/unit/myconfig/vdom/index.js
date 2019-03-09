@@ -4,4 +4,6 @@ require('es6-promise/auto')
 const helpersContext = require.context('../../../helpers', true)
 helpersContext.keys().forEach(helpersContext)
 
-require('../../modules/compiler/parser.spec')
+
+const testsContext = require.context('../../modules/vdom', true, /\.spec$/)
+testsContext.keys().forEach(testsContext)

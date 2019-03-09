@@ -49,10 +49,12 @@ describe('vdom patch: children', () => {
     patch(null, vnode0)
   })
 
-  it('should appends elements', () => {
+  fit('should appends elements', () => {
     const vnode1 = new VNode('p', {}, [1].map(spanNum))
     const vnode2 = new VNode('p', {}, [1, 2, 3].map(spanNum))
     let elm = patch(vnode0, vnode1)
+    console.log(elm)
+    debugger;
     expect(elm.children.length).toBe(1)
     elm = patch(vnode1, vnode2)
     expect(elm.children.length).toBe(3)
