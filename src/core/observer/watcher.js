@@ -50,6 +50,7 @@ export default class Watcher {
     options?: ?Object,
     isRenderWatcher?: boolean
   ) {
+    debugger
     this.vm = vm
     if (isRenderWatcher) {
       vm._watcher = this
@@ -100,6 +101,7 @@ export default class Watcher {
    * Evaluate the getter, and re-collect dependencies.
    */
   get () {
+    // Dep.target上面设置此watcher
     pushTarget(this)
     let value
     const vm = this.vm
@@ -117,6 +119,7 @@ export default class Watcher {
       if (this.deep) {
         traverse(value)
       }
+      // 移除target
       popTarget()
       this.cleanupDeps()
     }

@@ -919,6 +919,7 @@
    * collect dependencies and dispatch updates.
    */
   var Observer = function Observer (value) {
+    debugger
     this.value = value;
     this.dep = new Dep();
     this.vmCount = 0;
@@ -1009,6 +1010,7 @@
 
   /**
    * Define a reactive property on an Object.
+   * @important
    */
   function defineReactive$$1 (
     obj,
@@ -1017,6 +1019,7 @@
     customSetter,
     shallow
   ) {
+    debugger
     var dep = new Dep();
 
     var property = Object.getOwnPropertyDescriptor(obj, key);
@@ -3234,6 +3237,7 @@
    * A watcher parses an expression, collects dependencies,
    * and fires callback when the expression value changes.
    * This is used for both the $watch() api and directives.
+   * 作用是观察某对象的表达式变化，如果发生变化则触发回调
    */
   var Watcher = function Watcher (
     vm,
@@ -3242,6 +3246,7 @@
     options,
     isRenderWatcher
   ) {
+    debugger
     this.vm = vm;
     if (isRenderWatcher) {
       vm._watcher = this;
@@ -4809,9 +4814,11 @@
       vm._self = vm;
       initLifecycle(vm);
       initEvents(vm);
+      // @important
       initRender(vm);
       callHook(vm, 'beforeCreate');
       initInjections(vm); // resolve injections before data/props
+      // @important
       initState(vm);
       initProvide(vm); // resolve provide after data/props
       callHook(vm, 'created');
@@ -5648,6 +5655,7 @@
 
   function createPatchFunction (backend) {
     var i, j;
+    // @? 何时赋值
     var cbs = {};
 
     var modules = backend.modules;
@@ -5702,6 +5710,17 @@
 
     var creatingElmInVPre = 0;
 
+    /**
+     * 通过vnode递归创建dom元素，递归时会通过insert把子元素插入到父元素里面，以建立父子关系。
+     * 简单说就是给vnode及子元素，添加elm属性。
+     * @param vnode
+     * @param insertedVnodeQueue
+     * @param parentElm
+     * @param refElm
+     * @param nested
+     * @param ownerArray
+     * @param index
+     */
     function createElm (
       vnode,
       insertedVnodeQueue,
@@ -5721,6 +5740,7 @@
       }
 
       vnode.isRootInsert = !nested; // for transition enter check
+      // @?
       if (createComponent(vnode, insertedVnodeQueue, parentElm, refElm)) {
         return
       }
@@ -5749,7 +5769,7 @@
         setScope(vnode);
 
         /* istanbul ignore if */
-        {
+        {  // @core 核心流程
           createChildren(vnode, children, insertedVnodeQueue);
           if (isDef(data)) {
             invokeCreateHooks(vnode, insertedVnodeQueue);
@@ -5760,10 +5780,10 @@
         if (data && data.pre) {
           creatingElmInVPre--;
         }
-      } else if (isTrue(vnode.isComment)) {
+      } else if (isTrue(vnode.isComment)) { // 注释
         vnode.elm = nodeOps.createComment(vnode.text);
         insert(parentElm, vnode.elm, refElm);
-      } else {
+      } else {  // 文本节点
         vnode.elm = nodeOps.createTextNode(vnode.text);
         insert(parentElm, vnode.elm, refElm);
       }
@@ -6092,6 +6112,7 @@
       // note we only do this if the vnode is cloned -
       // if the new node is not cloned it means the render functions have been
       // reset by the hot-reload-api and we need to do a proper re-render.
+      // 静态节点不做patch处理
       if (isTrue(vnode.isStatic) &&
         isTrue(oldVnode.isStatic) &&
         vnode.key === oldVnode.key &&
@@ -6109,18 +6130,22 @@
 
       var oldCh = oldVnode.children;
       var ch = vnode.children;
+      // update hook
       if (isDef(data) && isPatchable(vnode)) {
         for (i = 0; i < cbs.update.length; ++i) { cbs.update[i](oldVnode, vnode); }
         if (isDef(i = data.hook) && isDef(i = i.update)) { i(oldVnode, vnode); }
       }
+      // 非文本节点
       if (isUndef(vnode.text)) {
+        // @core oldChi 和 vnode children都存在的情况
         if (isDef(oldCh) && isDef(ch)) {
           if (oldCh !== ch) { updateChildren(elm, oldCh, ch, insertedVnodeQueue, removeOnly); }
-        } else if (isDef(ch)) {
+        } else if (isDef(ch)) { // 没有oldChildren
           {
             checkDuplicateKeys(ch);
           }
           if (isDef(oldVnode.text)) { nodeOps.setTextContent(elm, ''); }
+          // 给每一个children节点递归创建elm，父元素为oldVnode的elm
           addVnodes(elm, null, ch, 0, ch.length - 1, insertedVnodeQueue);
         } else if (isDef(oldCh)) {
           removeVnodes(elm, oldCh, 0, oldCh.length - 1);
@@ -6259,15 +6284,22 @@
       }
     }
 
+    /**
+     * @important
+     */
     return function patch (oldVnode, vnode, hydrating, removeOnly) {
+      debugger
+      // 没有新节点，则意味着要移除老节点
+      // @? 老节点如果没有destroy?
       if (isUndef(vnode)) {
         if (isDef(oldVnode)) { invokeDestroyHook(oldVnode); }
         return
       }
 
       var isInitialPatch = false;
-      var insertedVnodeQueue = [];
+      var insertedVnodeQueue = []; // @?
 
+      // 如果没有老节点，则直接创建新节点即可
       if (isUndef(oldVnode)) {
         // empty mount (likely as component), create new root element
         isInitialPatch = true;
@@ -6359,6 +6391,7 @@
         }
       }
 
+      // @?
       invokeInsertHook(vnode, insertedVnodeQueue, isInitialPatch);
       return vnode.elm
     }
@@ -9547,7 +9580,17 @@
         }
 
         // @mycode
-        // const cp = stack[stack.length - 1]
+        // if (currentParent && !element.forbidden) {
+        //   if (element.elseif || element.else) {
+        //     processIfConditions(element, currentParent)
+        //   } else if (element.slotScope) { // scoped slot
+        //     const name = element.slotTarget || '"default"'
+        //     ;(currentParent.scopedSlots || (currentParent.scopedSlots = {}))[name] = element
+        //   } else {
+        //     currentParent.children.push(element)
+        //     element.parent = currentParent
+        //   }
+        // }
 
         // 如果不是 input这类可以直接闭合的标签
         if (!unary) {
@@ -9556,19 +9599,6 @@
         } else {
           closeElement(element);
         }
-
-        // @mycode
-        // if (cp && !element.forbidden) {
-        //   if (element.elseif || element.else) {
-        //     processIfConditions(element, cp)
-        //   } else if (element.slotScope) { // scoped slot
-        //     const name = element.slotTarget || '"default"'
-        //     ;(cp.scopedSlots || (cp.scopedSlots = {}))[name] = element
-        //   } else {
-        //     cp.children.push(element)
-        //     element.parent = cp
-        //   }
-        // }
       },
 
       /**
@@ -11387,6 +11417,7 @@
     template,
     options
   ) {
+    debugger
     var ast = parse(template.trim(), options);
     if (options.optimize !== false) {
       optimize(ast, options);

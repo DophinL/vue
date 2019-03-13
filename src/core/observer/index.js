@@ -40,6 +40,7 @@ export class Observer {
   vmCount: number; // number of vms that have this object as root $data
 
   constructor (value: any) {
+    debugger
     this.value = value
     this.dep = new Dep()
     this.vmCount = 0
@@ -140,6 +141,7 @@ export function defineReactive (
   customSetter?: ?Function,
   shallow?: boolean
 ) {
+  debugger
   const dep = new Dep()
 
   const property = Object.getOwnPropertyDescriptor(obj, key)

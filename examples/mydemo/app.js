@@ -4,7 +4,7 @@
  * Actual demo
  */
 
-new Vue({
+var vv = new Vue({
 
   el: '#demo',
 

@@ -414,6 +414,7 @@ export function createPatchFunction (backend) {
     }
   }
 
+  // @core diff算法
   function updateChildren (parentElm, oldCh, newCh, insertedVnodeQueue, removeOnly) {
     let oldStartIdx = 0
     let newStartIdx = 0
@@ -440,6 +441,7 @@ export function createPatchFunction (backend) {
       } else if (isUndef(oldEndVnode)) {
         oldEndVnode = oldCh[--oldEndIdx]
       } else if (sameVnode(oldStartVnode, newStartVnode)) {
+        // 比如[1,2,3]和[1,2,3,4]，相同item的时候，实际上什么事情都不会做
         patchVnode(oldStartVnode, newStartVnode, insertedVnodeQueue, newCh, newStartIdx)
         oldStartVnode = oldCh[++oldStartIdx]
         newStartVnode = newCh[++newStartIdx]
@@ -478,6 +480,7 @@ export function createPatchFunction (backend) {
         newStartVnode = newCh[++newStartIdx]
       }
     }
+    // 比如[1,2,3]和[1,2,3,4]
     if (oldStartIdx > oldEndIdx) {
       refElm = isUndef(newCh[newEndIdx + 1]) ? null : newCh[newEndIdx + 1].elm
       addVnodes(parentElm, refElm, newCh, newStartIdx, newEndIdx, insertedVnodeQueue)
@@ -719,6 +722,7 @@ export function createPatchFunction (backend) {
    * @important
    */
   return function patch (oldVnode, vnode, hydrating, removeOnly) {
+    debugger
     // 没有新节点，则意味着要移除老节点
     // @? 老节点如果没有destroy?
     if (isUndef(vnode)) {

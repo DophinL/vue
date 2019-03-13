@@ -263,6 +263,7 @@ var attribute = /^\s*([^\s"'<>\/=]+)(?:\s*(=)\s*(?:"([^"]*)"+|'([^']*)'+|([^\s"'
 var ncname = "[a-zA-Z_][\\-\\.0-9_a-zA-Z" + unicodeLetters + "]*";
 var qnameCapture = "((?:" + ncname + "\\:)?" + ncname + ")";
 var startTagOpen = new RegExp(("^<" + qnameCapture));
+// $1代表结束标签，比如<br />
 var startTagClose = /^\s*(\/?)>/;
 var endTag = new RegExp(("^<\\/" + qnameCapture + "[^>]*>"));
 var doctype = /^<!DOCTYPE [^>]+>/i;
@@ -289,6 +290,7 @@ var encodedAttrWithNewLines = /&(?:lt|gt|quot|amp|#10|#9);/g;
 var isIgnoreNewlineTag = makeMap('pre,textarea', true);
 var shouldIgnoreFirstNewline = function (tag, html) { return tag && isIgnoreNewlineTag(tag) && html[0] === '\n'; };
 
+// 对attr解码，比如把 &lt; 换成 <
 function decodeAttr (value, shouldDecodeNewlines) {
   var re = shouldDecodeNewlines ? encodedAttrWithNewLines : encodedAttr;
   return value.replace(re, function (match) { return decodingMap[match]; })
@@ -300,10 +302,12 @@ function parseHTML (html, options) {
   var isUnaryTag$$1 = options.isUnaryTag || no;
   var canBeLeftOpenTag$$1 = options.canBeLeftOpenTag || no;
   var index = 0;
+  // @? lastTag是什么
   var last, lastTag;
   while (html) {
     last = html;
     // Make sure we're not in a plaintext content element like script/style
+    // @?
     if (!lastTag || !isPlainTextElement(lastTag)) {
       var textEnd = html.indexOf('<');
       if (textEnd === 0) {
@@ -357,6 +361,7 @@ function parseHTML (html, options) {
         }
       }
 
+      // text处理
       var text = (void 0), rest = (void 0), next = (void 0);
       if (textEnd >= 0) {
         rest = html.slice(textEnd);
@@ -375,6 +380,7 @@ function parseHTML (html, options) {
         text = html.substring(0, textEnd);
       }
 
+      // 整个template都是纯文本
       if (textEnd < 0) {
         text = html;
       }
@@ -387,6 +393,7 @@ function parseHTML (html, options) {
         options.chars(text, index - text.length, index);
       }
     } else {
+      // @? 这段逻辑在做什么？
       var endTagLength = 0;
       var stackedTag = lastTag.toLowerCase();
       var reStackedTag = reCache[stackedTag] || (reCache[stackedTag] = new RegExp('([\\s\\S]*?)(</' + stackedTag + '[^>]*>)', 'i'));
@@ -410,6 +417,7 @@ function parseHTML (html, options) {
       parseEndTag(stackedTag, index - endTagLength, index);
     }
 
+    // @?
     if (html === last) {
       options.chars && options.chars(html);
       if (process.env.NODE_ENV !== 'production' && !stack.length && options.warn) {
@@ -427,16 +435,19 @@ function parseHTML (html, options) {
     html = html.substring(n);
   }
 
+  // 解析startTag，拿到原始的tagName、attrs等数据
+  // 我以为是先把start tag close找到，再去解析字符串；实际上是一步一步来
   function parseStartTag () {
     var start = html.match(startTagOpen);
     if (start) {
       var match = {
         tagName: start[1],
-        attrs: [],
+        attrs: [],  // 为match后的结果，还没有处理
         start: index
       };
       advance(start[0].length);
       var end, attr;
+      // @? 如果没有匹配到attribute，但也没结束？
       while (!(end = html.match(startTagClose)) && (attr = html.match(attribute))) {
         attr.start = index;
         advance(attr[0].length);
@@ -452,10 +463,16 @@ function parseHTML (html, options) {
     }
   }
 
+  /**
+   * 主要是生成attrs，并对值decode
+   * 剩余的职能靠start完成
+   */
   function handleStartTag (match) {
     var tagName = match.tagName;
+    // 结束标记，如<br /> <input />
     var unarySlash = match.unarySlash;
 
+    // @?
     if (expectHTML) {
       if (lastTag === 'p' && isNonPhrasingTag(tagName)) {
         parseEndTag(lastTag);
@@ -465,12 +482,14 @@ function parseHTML (html, options) {
       }
     }
 
+    // 有可能是input，不需要写 /
     var unary = isUnaryTag$$1(tagName) || !!unarySlash;
 
     var l = match.attrs.length;
     var attrs = new Array(l);
     for (var i = 0; i < l; i++) {
       var args = match.attrs[i];
+      // @? 为什么这样写
       var value = args[3] || args[4] || args[5] || '';
       var shouldDecodeNewlines = tagName === 'a' && args[1] === 'href'
         ? options.shouldDecodeNewlinesForHref
@@ -479,6 +498,8 @@ function parseHTML (html, options) {
         name: args[1],
         value: decodeAttr(value, shouldDecodeNewlines)
       };
+
+      // @? 为什么区分production？start为什么要变化
       if (process.env.NODE_ENV !== 'production' && options.outputSourceRange) {
         attrs[i].start = args.start + args[0].match(/^\s*/).length;
         attrs[i].end = args.end;
@@ -487,14 +508,20 @@ function parseHTML (html, options) {
 
     if (!unary) {
       stack.push({ tag: tagName, lowerCasedTag: tagName.toLowerCase(), attrs: attrs, start: match.start, end: match.end });
+      // lastTag的设置，顾名思义
       lastTag = tagName;
     }
 
+    // 重要步骤，前面都只是在处理基础的数据
     if (options.start) {
       options.start(tagName, attrs, unary, match.start, match.end);
     }
   }
 
+  /**
+   * 核心是做清栈操作
+   * @? 注意有哪些地方用到了
+   */
   function parseEndTag (tagName, start, end) {
     var pos, lowerCasedTagName;
     if (start == null) { start = index; }
@@ -509,6 +536,7 @@ function parseHTML (html, options) {
         }
       }
     } else {
+      // @?
       // If no tag name is provided, clean shop
       pos = 0;
     }
@@ -538,6 +566,7 @@ function parseHTML (html, options) {
         options.start(tagName, [], true, start, end);
       }
     } else if (lowerCasedTagName === 'p') {
+      // @?
       if (options.start) {
         options.start(tagName, [], false, start, end);
       }
@@ -787,7 +816,7 @@ var LIFECYCLE_HOOKS = [
   'activated',
   'deactivated',
   'errorCaptured',
-  'ssrPrefetch'
+  'serverPrefetch'
 ];
 
 /*  */
@@ -1137,6 +1166,7 @@ var shouldObserve = true;
  * collect dependencies and dispatch updates.
  */
 var Observer = function Observer (value) {
+  debugger
   this.value = value;
   this.dep = new Dep();
   this.vmCount = 0;
@@ -1227,6 +1257,7 @@ function observe (value, asRootData) {
 
 /**
  * Define a reactive property on an Object.
+ * @important
  */
 function defineReactive$$1 (
   obj,
@@ -1235,6 +1266,7 @@ function defineReactive$$1 (
   customSetter,
   shallow
 ) {
+  debugger
   var dep = new Dep();
 
   var property = Object.getOwnPropertyDescriptor(obj, key);
@@ -2324,13 +2356,14 @@ var dirRE = /^v-|^@|^:|^\./;
 var forAliasRE = /([\s\S]*?)\s+(?:in|of)\s+([\s\S]*)/;
 var forIteratorRE = /,([^,\}\]]*)(?:,([^,\}\]]*))?$/;
 var stripParensRE = /^\(|\)$/g;
+var dynamicKeyRE = /^\[.*\]$/;
 
 var argRE = /:(.*)$/;
 var bindRE = /^:|^\.|^v-bind:/;
 var propBindRE = /^\./;
 var modifierRE = /\.[^.]+/g;
 
-var scopedSlotShorthandRE = /^:?\(.*\)$/;
+var slotRE = /^v-slot(:|$)|^#/;
 
 var lineBreakRE = /[\r\n]/;
 var whitespaceRE = /\s+/g;
@@ -2348,7 +2381,7 @@ var platformMustUseProp;
 var platformGetTagNamespace;
 var maybeComponent;
 
-function createASTElement (
+function createASTElement(
   tag,
   attrs,
   parent
@@ -2367,7 +2400,7 @@ function createASTElement (
 /**
  * Convert HTML string to AST.
  */
-function parse (
+function parse(
   template,
   options
 ) {
@@ -2394,37 +2427,45 @@ function parse (
   var inPre = false;
   var warned = false;
 
-  function warnOnce (msg, range) {
+  function warnOnce(msg, range) {
     if (!warned) {
       warned = true;
       warn$1(msg, range);
     }
   }
 
-  function closeElement (element) {
+  /**
+   * 1.处理 带 v-if, v-else-if and v-else 的根节点
+   * 2.建立父子关系
+   */
+  function closeElement(element) {
     if (!inVPre && !element.processed) {
       element = processElement(element, options);
     }
     // tree management
+    // @? root为v-if, v-else-if and v-else
     if (!stack.length && element !== root) {
       // allow root elements with v-if, v-else-if and v-else
       if (root.if && (element.elseif || element.else)) {
         if (process.env.NODE_ENV !== 'production') {
           checkRootConstraints(element);
         }
+        // if condition是一个array，可以通过else if这种来累积
         addIfCondition(root, {
           exp: element.elseif,
           block: element
         });
       } else if (process.env.NODE_ENV !== 'production') {
+        // @? 不报错吗？
         warnOnce(
           "Component template should contain exactly one root element. " +
           "If you are using v-if on multiple elements, " +
           "use v-else-if to chain them instead.",
-          { start: element.start }
+          {start: element.start}
         );
       }
     }
+    // 核心代码，建立父子关系
     if (currentParent && !element.forbidden) {
       if (element.elseif || element.else) {
         processIfConditions(element, currentParent);
@@ -2449,12 +2490,12 @@ function parse (
     }
   }
 
-  function checkRootConstraints (el) {
+  function checkRootConstraints(el) {
     if (el.tag === 'slot' || el.tag === 'template') {
       warnOnce(
         "Cannot use <" + (el.tag) + "> as component root element because it may " +
         'contain multiple nodes.',
-        { start: el.start }
+        {start: el.start}
       );
     }
     if (el.attrsMap.hasOwnProperty('v-for')) {
@@ -2469,15 +2510,23 @@ function parse (
   parseHTML(template, {
     warn: warn$1,
     expectHTML: options.expectHTML,
+    // @design: 开放封闭原则，因为unaryTag可能随着标准的升级而变化，所以把这块变化封装起来
     isUnaryTag: options.isUnaryTag,
     canBeLeftOpenTag: options.canBeLeftOpenTag,
     shouldDecodeNewlines: options.shouldDecodeNewlines,
     shouldDecodeNewlinesForHref: options.shouldDecodeNewlinesForHref,
     shouldKeepComment: options.comments,
     outputSourceRange: options.outputSourceRange,
-    start: function start (tag, attrs, unary, start$1) {
+    /**
+     * 核心：
+     * 1.ast化
+     * 2.生成element，放到栈里面
+     * 3.提取特殊属性，比如v-if、v-for等
+     */
+    start: function start(tag, attrs, unary, start$1) {
       // check namespace.
       // inherit parent ns if there is one
+      // @? 这是什么
       var ns = (currentParent && currentParent.ns) || platformGetTagNamespace(tag);
 
       // handle IE svg bug
@@ -2499,21 +2548,24 @@ function parse (
         }, {});
       }
 
+      // 不允许style、script
       if (isForbiddenTag(element) && !isServerRendering()) {
         element.forbidden = true;
         process.env.NODE_ENV !== 'production' && warn$1(
           'Templates should only be responsible for mapping the state to the ' +
           'UI. Avoid placing tags with side-effects in your templates, such as ' +
           "<" + tag + ">" + ', as they will not be parsed.',
-          { start: element.start }
+          {start: element.start}
         );
       }
 
       // apply pre-transforms
+      // @? 这是什么
       for (var i = 0; i < preTransforms.length; i++) {
         element = preTransforms[i](element, options) || element;
       }
 
+      // v-pre处理
       if (!inVPre) {
         processPre(element);
         if (element.pre) {
@@ -2523,6 +2575,7 @@ function parse (
       if (platformIsPreTag(element.tag)) {
         inPre = true;
       }
+      // 带有v-pre，意味着element.pre已经为true了
       if (inVPre) {
         processRawAttrs(element);
       } else if (!element.processed) {
@@ -2539,6 +2592,20 @@ function parse (
         }
       }
 
+      // @mycode
+      // if (currentParent && !element.forbidden) {
+      //   if (element.elseif || element.else) {
+      //     processIfConditions(element, currentParent)
+      //   } else if (element.slotScope) { // scoped slot
+      //     const name = element.slotTarget || '"default"'
+      //     ;(currentParent.scopedSlots || (currentParent.scopedSlots = {}))[name] = element
+      //   } else {
+      //     currentParent.children.push(element)
+      //     element.parent = currentParent
+      //   }
+      // }
+
+      // 如果不是 input这类可以直接闭合的标签
       if (!unary) {
         currentParent = element;
         stack.push(element);
@@ -2547,8 +2614,14 @@ function parse (
       }
     },
 
-    end: function end (tag, start, end$1) {
+    /**
+     * 1.stack操作
+     * 2.currentParent处理
+     * 3.清除当前元素中多余空节点
+     */
+    end: function end(tag, start, end$1) {
       var element = stack[stack.length - 1];
+
       if (!inPre) {
         // remove trailing whitespace node
         var lastNode = element.children[element.children.length - 1];
@@ -2565,18 +2638,18 @@ function parse (
       closeElement(element);
     },
 
-    chars: function chars (text, start, end) {
+    chars: function chars(text, start, end) {
       if (!currentParent) {
         if (process.env.NODE_ENV !== 'production') {
           if (text === template) {
             warnOnce(
               'Component template requires a root element, rather than just text.',
-              { start: start }
+              {start: start}
             );
           } else if ((text = text.trim())) {
             warnOnce(
               ("text \"" + text + "\" outside root element will be ignored."),
-              { start: start }
+              {start: start}
             );
           }
         }
@@ -2636,7 +2709,7 @@ function parse (
         }
       }
     },
-    comment: function comment (text, start, end) {
+    comment: function comment(text, start, end) {
       var child = {
         type: 3,
         text: text,
@@ -2652,13 +2725,14 @@ function parse (
   return root
 }
 
-function processPre (el) {
+function processPre(el) {
   if (getAndRemoveAttr(el, 'v-pre') != null) {
     el.pre = true;
   }
 }
 
-function processRawAttrs (el) {
+// 纯粹的处理element.attrs属性
+function processRawAttrs(el) {
   var list = el.attrsList;
   var len = list.length;
   if (len) {
@@ -2675,11 +2749,12 @@ function processRawAttrs (el) {
     }
   } else if (!el.pre) {
     // non root node in pre blocks with no attributes
+    // 如<pre></pre>，<span></span>，没有任何附带attr，也没有v-pre
     el.plain = true;
   }
 }
 
-function processElement (
+function processElement(
   element,
   options
 ) {
@@ -2704,7 +2779,7 @@ function processElement (
   return element
 }
 
-function processKey (el) {
+function processKey(el) {
   var exp = getBindingAttr(el, 'key');
   if (exp) {
     if (process.env.NODE_ENV !== 'production') {
@@ -2731,7 +2806,7 @@ function processKey (el) {
   }
 }
 
-function processRef (el) {
+function processRef(el) {
   var ref = getBindingAttr(el, 'ref');
   if (ref) {
     el.ref = ref;
@@ -2739,7 +2814,7 @@ function processRef (el) {
   }
 }
 
-function processFor (el) {
+function processFor(el) {
   var exp;
   if ((exp = getAndRemoveAttr(el, 'v-for'))) {
     var res = parseFor(exp);
@@ -2756,7 +2831,7 @@ function processFor (el) {
 
 
 
-function parseFor (exp) {
+function parseFor(exp) {
   var inMatch = exp.match(forAliasRE);
   if (!inMatch) { return }
   var res = {};
@@ -2775,7 +2850,8 @@ function parseFor (exp) {
   return res
 }
 
-function processIf (el) {
+// 给element添加 if v-else v-else-if 等属性，并从attrList中移除
+function processIf(el) {
   var exp = getAndRemoveAttr(el, 'v-if');
   if (exp) {
     el.if = exp;
@@ -2794,7 +2870,13 @@ function processIf (el) {
   }
 }
 
-function processIfConditions (el, parent) {
+/**
+ * 找到前一个element，如果带if，则往ifConditions数组里面添加{exp,block}
+ * @? 如果前一个element带 else-if，那不是就不做任何处理？
+ * @answer 前一个element不可能带else-if，因为parent.children里面不会存，else-if星河中都加入到if元素里面去了
+ * @? else的怎么处理？
+ */
+function processIfConditions(el, parent) {
   var prev = findPrevElement(parent.children);
   if (prev && prev.if) {
     addIfCondition(prev, {
@@ -2810,7 +2892,7 @@ function processIfConditions (el, parent) {
   }
 }
 
-function findPrevElement (children) {
+function findPrevElement(children) {
   var i = children.length;
   while (i--) {
     if (children[i].type === 1) {
@@ -2828,14 +2910,14 @@ function findPrevElement (children) {
   }
 }
 
-function addIfCondition (el, condition) {
+function addIfCondition(el, condition) {
   if (!el.ifConditions) {
     el.ifConditions = [];
   }
   el.ifConditions.push(condition);
 }
 
-function processOnce (el) {
+function processOnce(el) {
   var once$$1 = getAndRemoveAttr(el, 'v-once');
   if (once$$1 != null) {
     el.once = true;
@@ -2844,7 +2926,7 @@ function processOnce (el) {
 
 // handle content being passed to a component as slot,
 // e.g. <template slot="xxx">, <div slot-scope="xxx">
-function processSlotContent (el) {
+function processSlotContent(el) {
   var slotScope;
   if (el.tag === 'template') {
     slotScope = getAndRemoveAttr(el, 'scope');
@@ -2859,27 +2941,7 @@ function processSlotContent (el) {
         true
       );
     }
-    el.slotScope = (
-      slotScope ||
-      getAndRemoveAttr(el, 'slot-scope')
-    );
-    if (process.env.NEW_SLOT_SYNTAX) {
-      // new in 2.6: slot-props and its shorthand works the same as slot-scope
-      // when used on <template> containers
-      el.slotScope = el.slotScope || getAndRemoveAttr(el, 'slot-props');
-      // 2.6 shorthand syntax
-      var shorthand = getAndRemoveAttrByRegex(el, scopedSlotShorthandRE);
-      if (shorthand) {
-        if (process.env.NODE_ENV !== 'production' && el.slotScope) {
-          warn$1(
-            "Unexpected mixed usage of different slot syntaxes.",
-            el
-          );
-        }
-        el.slotTarget = getScopedSlotShorthandName(shorthand);
-        el.slotScope = shorthand.value;
-      }
-    }
+    el.slotScope = slotScope || getAndRemoveAttr(el, 'slot-scope');
   } else if ((slotScope = getAndRemoveAttr(el, 'slot-scope'))) {
     /* istanbul ignore if */
     if (process.env.NODE_ENV !== 'production' && el.attrsMap['v-for']) {
@@ -2892,36 +2954,6 @@ function processSlotContent (el) {
       );
     }
     el.slotScope = slotScope;
-  } else if (process.env.NEW_SLOT_SYNTAX) {
-    // 2.6: slot-props on component, denotes default slot
-    slotScope = getAndRemoveAttr(el, 'slot-props');
-    var shorthand$1 = getAndRemoveAttrByRegex(el, scopedSlotShorthandRE);
-    if (slotScope || shorthand$1) {
-      if (process.env.NODE_ENV !== 'production') {
-        if (!maybeComponent(el)) {
-          warn$1(
-            "slot-props cannot be used on non-component elements.",
-            el.rawAttrsMap['slot-props'] || el.rawAttrsMap['()']
-          );
-        }
-        if (slotScope && shorthand$1) {
-          warn$1(
-            "Unexpected mixed usage of different slot syntaxes.",
-            el
-          );
-        }
-      }
-      // add the component's children to its default slot
-      var slots = el.scopedSlots || (el.scopedSlots = {});
-      var target = shorthand$1 ? getScopedSlotShorthandName(shorthand$1) : "\"default\"";
-      var slotContainer = slots[target] = createASTElement('template', [], el);
-      slotContainer.children = el.children;
-      slotContainer.slotScope = shorthand$1 ? shorthand$1.value : slotScope;
-      // remove children as they are returned from scopedSlots now
-      el.children = [];
-      // mark el non-plain so data gets generated
-      el.plain = false;
-    }
   }
 
   // slot="xxx"
@@ -2934,20 +2966,71 @@ function processSlotContent (el) {
       addAttr(el, 'slot', slotTarget, getRawBindingAttr(el, 'slot'));
     }
   }
+
+  // 2.6 v-slot syntax
+  if (process.env.NEW_SLOT_SYNTAX) {
+    if (el.tag === 'template') {
+      // v-slot on <template>
+      var slotBinding = getAndRemoveAttrByRegex(el, slotRE);
+      if (slotBinding) {
+        if (
+          process.env.NODE_ENV !== 'production' &&
+          (el.slotTarget || el.slotScope)
+        ) {
+          warn$1(
+            "Unexpected mixed usage of different slot syntaxes.",
+            el
+          );
+        }
+        el.slotTarget = getSlotName(slotBinding);
+        el.slotScope = slotBinding.value;
+      }
+    } else {
+      // v-slot on component, denotes default slot
+      var slotBinding$1 = getAndRemoveAttrByRegex(el, slotRE);
+      if (slotBinding$1) {
+        if (process.env.NODE_ENV !== 'production') {
+          if (!maybeComponent(el)) {
+            warn$1(
+              "v-slot cannot be used on non-component elements.",
+              slotBinding$1
+            );
+          }
+          if (el.slotScope || el.slotTarget) {
+            warn$1(
+              "Unexpected mixed usage of different slot syntaxes.",
+              el
+            );
+          }
+        }
+        // add the component's children to its default slot
+        var slots = el.scopedSlots || (el.scopedSlots = {});
+        var target = getSlotName(slotBinding$1);
+        var slotContainer = slots[target] = createASTElement('template', [], el);
+        slotContainer.children = el.children;
+        slotContainer.slotScope = slotBinding$1.value;
+        // remove children as they are returned from scopedSlots now
+        el.children = [];
+        // mark el non-plain so data gets generated
+        el.plain = false;
+      }
+    }
+  }
 }
 
-function getScopedSlotShorthandName (ref) {
+function getSlotName(ref) {
   var name = ref.name;
 
-  return name.charAt(0) === ':'
-    // dynamic :(name)
-    ? name.slice(2, -1) || "\"default\""
-    // static (name)
-    : ("\"" + (name.slice(1, -1) || "default") + "\"")
+  name = name.replace(slotRE, '');
+  return dynamicKeyRE.test(name)
+    // dynamic [name]
+    ? name.slice(1, -1)
+    // static name
+    : ("\"" + (name || "default") + "\"")
 }
 
 // handle <slot/> outlets
-function processSlotOutlet (el) {
+function processSlotOutlet(el) {
   if (el.tag === 'slot') {
     el.slotName = getBindingAttr(el, 'name');
     if (process.env.NODE_ENV !== 'production' && el.key) {
@@ -2961,7 +3044,7 @@ function processSlotOutlet (el) {
   }
 }
 
-function processComponent (el) {
+function processComponent(el) {
   var binding;
   if ((binding = getBindingAttr(el, 'is'))) {
     el.component = binding;
@@ -2971,7 +3054,7 @@ function processComponent (el) {
   }
 }
 
-function processAttrs (el) {
+function processAttrs(el) {
   var list = el.attrsList;
   var i, l, name, rawName, value, modifiers, isProp, syncGen;
   for (i = 0, l = list.length; i < l; i++) {
@@ -3075,15 +3158,15 @@ function processAttrs (el) {
       // #6887 firefox doesn't update muted state if set via attribute
       // even immediately after element creation
       if (!el.component &&
-          name === 'muted' &&
-          platformMustUseProp(el.tag, el.attrsMap.type, name)) {
+        name === 'muted' &&
+        platformMustUseProp(el.tag, el.attrsMap.type, name)) {
         addProp(el, name, 'true', list[i]);
       }
     }
   }
 }
 
-function checkInFor (el) {
+function checkInFor(el) {
   var parent = el;
   while (parent) {
     if (parent.for !== undefined) {
@@ -3094,16 +3177,18 @@ function checkInFor (el) {
   return false
 }
 
-function parseModifiers (name) {
+function parseModifiers(name) {
   var match = name.match(modifierRE);
   if (match) {
     var ret = {};
-    match.forEach(function (m) { ret[m.slice(1)] = true; });
+    match.forEach(function (m) {
+      ret[m.slice(1)] = true;
+    });
     return ret
   }
 }
 
-function makeAttrsMap (attrs) {
+function makeAttrsMap(attrs) {
   var map = {};
   for (var i = 0, l = attrs.length; i < l; i++) {
     if (
@@ -3118,11 +3203,11 @@ function makeAttrsMap (attrs) {
 }
 
 // for script (e.g. type="x/template") or style, do not decode content
-function isTextTag (el) {
+function isTextTag(el) {
   return el.tag === 'script' || el.tag === 'style'
 }
 
-function isForbiddenTag (el) {
+function isForbiddenTag(el) {
   return (
     el.tag === 'style' ||
     (el.tag === 'script' && (
@@ -3136,7 +3221,7 @@ var ieNSBug = /^xmlns:NS\d+/;
 var ieNSPrefix = /^NS\d+:/;
 
 /* istanbul ignore next */
-function guardIESVGBug (attrs) {
+function guardIESVGBug(attrs) {
   var res = [];
   for (var i = 0; i < attrs.length; i++) {
     var attr = attrs[i];
@@ -3148,7 +3233,7 @@ function guardIESVGBug (attrs) {
   return res
 }
 
-function checkForAliasModel (el, value) {
+function checkForAliasModel(el, value) {
   var _el = el;
   while (_el) {
     if (_el.for && _el.alias === value) {
@@ -4585,6 +4670,7 @@ var createCompiler = createCompilerCreator(function baseCompile (
   template,
   options
 ) {
+  debugger
   var ast = parse(template.trim(), options);
   if (options.optimize !== false) {
     optimize(ast, options);
@@ -5153,3 +5239,4 @@ exports.compileToFunctions = compileToFunctions;
 exports.ssrCompile = compile$1;
 exports.ssrCompileToFunctions = compileToFunctions$1;
 exports.generateCodeFrame = generateCodeFrame;
+//# sourceMappingURL=build.js.map
